@@ -163,7 +163,7 @@ class CodeEditorState extends State<CodeEditor> {
     _cursorPosition = _controller.selection.baseOffset;
     widget.onChanged?.call(_controller.text);
     _detectFoldableRegions();
-    setState(() {}); // Trigger rebuild for syntax highlighting
+    // Don't call setState here - it causes selection to be lost
 
     // Debounce autocomplete requests
     _debounceTimer?.cancel();
