@@ -739,56 +739,54 @@ class CodeEditorState extends State<CodeEditor> {
     );
   }
 
-  /// Build view with syntax highlighting using SelectableText + TextField overlay
+  /// Build view with syntax highlighting using Text.rich + TextField overlay
   Widget _buildHighlightedView() {
     final baseStyle = AppTheme.monoStyle.copyWith(
-      height: 1.43,
+      height: 1.5,
       fontSize: 14,
     );
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Stack(
-          children: [
-            // Syntax highlighted text (read-only, for display)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Text.rich(
-                    TextSpan(
-                      style: baseStyle,
-                      children: _buildHighlightedSpans(_controller.text),
-                    ),
-                  ),
+    return Stack(
+      children: [
+        // Syntax highlighted text (read-only, for display)
+        Positioned.fill(
+          child: IgnorePointer(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Text.rich(
+                TextSpan(
+                  style: baseStyle,
+                  children: _buildHighlightedSpans(_controller.text),
                 ),
               ),
             ),
-            // Transparent TextField for editing
-            TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              maxLines: null,
-              style: baseStyle.copyWith(color: Colors.transparent),
-              cursorColor: AppColors.primary,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.all(12),
-                hintText: _controller.text.isEmpty ? widget.hintText : null,
-                hintStyle: TextStyle(
-                  color: AppColors.mutedForeground,
-                  fontSize: 14,
-                ),
-              ),
-              onChanged: (text) {
-                setState(() {}); // Rebuild to update highlighting
-                widget.onChanged?.call(text);
-              },
-              onTap: widget.onTap,
+          ),
+        ),
+        // Transparent TextField for editing
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          maxLines: null,
+          style: baseStyle.copyWith(color: Colors.transparent),
+          cursorColor: AppColors.primary,
+          decoration: InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+            hintText: _controller.text.isEmpty ? widget.hintText : null,
+            hintStyle: TextStyle(
+              color: AppColors.mutedForeground,
+              fontSize: 14,
+              height: 1.5,
             ),
-          ],
-        );
-      },
+          ),
+          onChanged: (text) {
+            setState(() {}); // Rebuild to update highlighting
+            widget.onChanged?.call(text);
+          },
+          onTap: widget.onTap,
+        ),
+      ],
     );
   }
 
