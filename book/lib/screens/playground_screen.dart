@@ -3,6 +3,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/layout/main_layout.dart';
+import '../widgets/notebook/code_editor.dart';
 
 class PlaygroundScreen extends StatefulWidget {
   const PlaygroundScreen({super.key});
@@ -12,7 +13,7 @@ class PlaygroundScreen extends StatefulWidget {
 }
 
 class _PlaygroundScreenState extends State<PlaygroundScreen> {
-  final _codeController = TextEditingController(text: '''import torch
+  String _code = '''import torch
 import torch.nn as nn
 
 # Check GPU availability
@@ -23,15 +24,13 @@ if torch.cuda.is_available():
 # Create a simple tensor
 x = torch.randn(3, 3).cuda()
 print(f"Tensor on GPU: {x}")
-''');
-
+''';
   String _output = '';
   bool _isRunning = false;
   String _language = 'Python';
 
   @override
   void dispose() {
-    _codeController.dispose();
     super.dispose();
   }
 
@@ -210,60 +209,20 @@ print(f"Tensor on GPU: {x}")
                 ),
                 const Spacer(),
                 _EditorAction(icon: LucideIcons.copy, onTap: () {}),
-                _EditorAction(icon: LucideIcons.eraser, onTap: () => _codeController.clear()),
+                _EditorAction(icon: LucideIcons.eraser, onTap: () => setState(() => _code = '')),
               ],
             ),
           ),
           // Code editor with line numbers
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Line numbers
-                Container(
-                  padding: EdgeInsets.only(top: 16, left: 8, right: 8),
-                  color: AppColors.card,
-                  child: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _codeController,
-                    builder: (context, value, _) {
-                      final lineCount = '\n'.allMatches(value.text).length + 1;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: List.generate(lineCount, (i) => SizedBox(
-                          height: 14 * 1.4,
-                          child: Text(
-                            '${i + 1}',
-                            style: AppTheme.monoStyle.copyWith(
-                              color: AppColors.mutedForeground,
-                              fontSize: 14,
-                              height: 1.4,
-                            ),
-                          ),
-                        )),
-                      );
-                    },
-                  ),
-                ),
-                // Code input
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.all(16),
-                    child: TextField(
-                      controller: _codeController,
-                      maxLines: null,
-                      style: AppTheme.monoStyle.copyWith(
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: CodeEditor(
+              key: ValueKey(_code.isEmpty ? 'empty' : 'code'),
+              initialValue: _code,
+              onChanged: (value) => _code = value,
+              showLineNumbers: true,
+              enableFolding: false,
+              enableScroll: true,
+              hintText: '# Enter Python code...',
             ),
           ),
         ],
@@ -357,13 +316,9 @@ print(f"Tensor on GPU: {x}")
   }
 
   void _insertSnippet(String snippet) {
-    final text = _codeController.text;
-    final selection = _codeController.selection;
-    final newText = text.replaceRange(selection.start, selection.end, snippet);
-    _codeController.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: selection.start + snippet.length),
-    );
+    setState(() {
+      _code = _code + '\n' + snippet;
+    });
   }
 
   void _runCode() {

@@ -1142,24 +1142,24 @@ import pandas as pd
     switch (status) {
       case 'idle':
         statusColor = AppColors.success;
-        statusText = 'Python 3.11 • Idle';
+        statusText = 'Idle';
         break;
       case 'busy':
         statusColor = AppColors.warning;
-        statusText = 'Python 3.11 • Running';
+        statusText = 'Running';
         break;
       case 'starting':
       case 'restarting':
         statusColor = AppColors.warning;
-        statusText = 'Python 3.11 • Starting...';
+        statusText = 'Starting...';
         break;
       case 'error':
         statusColor = AppColors.destructive;
-        statusText = 'Python 3.11 • Error';
+        statusText = 'Error';
         break;
       default:
         statusColor = AppColors.mutedForeground;
-        statusText = 'Python 3.11';
+        statusText = 'Ready';
     }
 
     return Row(

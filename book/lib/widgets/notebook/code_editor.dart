@@ -47,6 +47,7 @@ class CodeEditor extends StatefulWidget {
   final String hintText;
   final bool showLineNumbers;
   final bool enableFolding;
+  final bool enableScroll; // Enable internal scrolling (for standalone use)
 
   const CodeEditor({
     super.key,
@@ -58,6 +59,7 @@ class CodeEditor extends StatefulWidget {
     this.hintText = '# Enter Python code...',
     this.showLineNumbers = true,
     this.enableFolding = true,
+    this.enableScroll = false, // Disabled by default for notebook cells
   });
 
   @override
@@ -69,6 +71,10 @@ class CodeEditorState extends State<CodeEditor> {
   late FocusNode _focusNode;
   final LayerLink _layerLink = LayerLink();
   OverlayEntry? _overlayEntry;
+
+  // Scroll synchronization
+  final ScrollController _lineNumbersScrollController = ScrollController();
+  final ScrollController _editorScrollController = ScrollController();
 
   List<String> _suggestions = [];
   int _selectedIndex = 0;
@@ -133,6 +139,15 @@ class CodeEditorState extends State<CodeEditor> {
     _focusNode = widget.focusNode ?? FocusNode();
     _controller.addListener(_onTextChanged);
     _detectFoldableRegions();
+
+    // Sync scroll between line numbers and editor
+    _editorScrollController.addListener(_syncScroll);
+  }
+
+  void _syncScroll() {
+    if (_lineNumbersScrollController.hasClients && _editorScrollController.hasClients) {
+      _lineNumbersScrollController.jumpTo(_editorScrollController.offset);
+    }
   }
 
   @override
@@ -152,6 +167,9 @@ class CodeEditorState extends State<CodeEditor> {
     _overlayEntry?.remove();
     _overlayEntry = null;
     _controller.removeListener(_onTextChanged);
+    _editorScrollController.removeListener(_syncScroll);
+    _editorScrollController.dispose();
+    _lineNumbersScrollController.dispose();
     _controller.dispose();
     if (widget.focusNode == null) {
       _focusNode.dispose();
@@ -592,6 +610,64 @@ class CodeEditorState extends State<CodeEditor> {
     return displayLines.join('\n');
   }
 
+  Widget _buildLineNumbers(double lineHeightPx, double fontSize, double textLineHeight) {
+    return Padding(
+      padding: EdgeInsets.only(top: 12, right: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(lineCount, (index) {
+          final lineNumber = index + 1;
+          final region = _getRegionAtLine(index);
+          final hasFoldIndicator = region != null;
+          final isHidden = _isLineHidden(index);
+
+          if (isHidden) return const SizedBox.shrink();
+
+          return SizedBox(
+            height: lineHeightPx,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Fold indicator
+                if (widget.enableFolding)
+                  SizedBox(
+                    width: 16,
+                    child: hasFoldIndicator
+                        ? MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              onTap: () => toggleFold(region.startLine),
+                              child: Icon(
+                                region.isCollapsed
+                                    ? LucideIcons.chevronRight
+                                    : LucideIcons.chevronDown,
+                                size: 12,
+                                color: AppColors.mutedForeground,
+                              ),
+                            ),
+                          )
+                        : null,
+                  ),
+                // Line number
+                Text(
+                  '$lineNumber',
+                  textAlign: TextAlign.right,
+                  style: AppTheme.monoStyle.copyWith(
+                    color: AppColors.mutedForeground,
+                    fontSize: fontSize,
+                    height: textLineHeight,
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasCollapsedRegions = _foldableRegions.any((r) => r.isCollapsed);
@@ -609,63 +685,15 @@ class CodeEditorState extends State<CodeEditor> {
         children: [
           // Line numbers with fold indicators
           if (widget.showLineNumbers)
-            SingleChildScrollView(
-              child: Padding(
-                padding: EdgeInsets.only(top: 12, right: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(lineCount, (index) {
-                    final lineNumber = index + 1;
-                    final region = _getRegionAtLine(index);
-                    final hasFoldIndicator = region != null;
-                    final isHidden = _isLineHidden(index);
-
-                    if (isHidden) return const SizedBox.shrink();
-
-                    return SizedBox(
-                      width: widget.enableFolding ? 52 : 36,
-                      height: lineHeightPx,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          // Fold indicator
-                          if (widget.enableFolding)
-                            SizedBox(
-                              width: 16,
-                              child: hasFoldIndicator
-                                  ? MouseRegion(
-                                      cursor: SystemMouseCursors.click,
-                                      child: GestureDetector(
-                                        onTap: () => toggleFold(region.startLine),
-                                        child: Icon(
-                                          region.isCollapsed
-                                              ? LucideIcons.chevronRight
-                                              : LucideIcons.chevronDown,
-                                          size: 12,
-                                          color: AppColors.mutedForeground,
-                                        ),
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                          // Line number
-                          Text(
-                            '$lineNumber',
-                            textAlign: TextAlign.right,
-                            style: AppTheme.monoStyle.copyWith(
-                              color: AppColors.mutedForeground,
-                              fontSize: fontSize,
-                              height: textLineHeight,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                      ),
-                    );
-                  }),
-                ),
-              ),
+            SizedBox(
+              width: widget.enableFolding ? 52 : 36,
+              child: widget.enableScroll
+                  ? SingleChildScrollView(
+                      controller: _lineNumbersScrollController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: _buildLineNumbers(lineHeightPx, fontSize, textLineHeight),
+                    )
+                  : _buildLineNumbers(lineHeightPx, fontSize, textLineHeight),
             ),
             // Code editor with syntax highlighting
             Expanded(
@@ -754,18 +782,16 @@ class CodeEditorState extends State<CodeEditor> {
       letterSpacing: 0.0,
     );
 
-    return Stack(
+    final content = Stack(
       children: [
         // Syntax highlighted text (read-only, for display)
-        Positioned.fill(
-          child: IgnorePointer(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text.rich(
-                TextSpan(
-                  style: baseStyle,
-                  children: _buildHighlightedSpans(_controller.text),
-                ),
+        IgnorePointer(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text.rich(
+              TextSpan(
+                style: baseStyle,
+                children: _buildHighlightedSpans(_controller.text),
               ),
             ),
           ),
@@ -781,7 +807,7 @@ class CodeEditorState extends State<CodeEditor> {
           decoration: InputDecoration(
             border: InputBorder.none,
             isDense: true,
-            contentPadding: const EdgeInsets.all(12),
+            contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             hintText: _controller.text.isEmpty ? widget.hintText : null,
             hintStyle: TextStyle(
               color: AppColors.mutedForeground,
@@ -797,6 +823,18 @@ class CodeEditorState extends State<CodeEditor> {
         ),
       ],
     );
+
+    if (widget.enableScroll) {
+      return ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: SingleChildScrollView(
+          controller: _editorScrollController,
+          child: content,
+        ),
+      );
+    }
+
+    return content;
   }
 
   /// Build folded view - uses per-line layout
