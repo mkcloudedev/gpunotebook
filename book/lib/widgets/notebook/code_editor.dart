@@ -594,81 +594,85 @@ class CodeEditorState extends State<CodeEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final visibleLines = _getVisibleLines();
-    final lineHeight = 20.0;
     final hasCollapsedRegions = _foldableRegions.any((r) => r.isCollapsed);
+
+    // Constants matching _buildHighlightedView
+    const double fontSize = 14.0;
+    const double textLineHeight = 1.4;
+    final double lineHeightPx = fontSize * textLineHeight; // 19.6px
 
     return KeyboardListener(
       focusNode: FocusNode(),
       onKeyEvent: _handleKeyEvent,
-      child: SingleChildScrollView(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Line numbers with fold indicators
-            if (widget.showLineNumbers)
-              SizedBox(
-                width: widget.enableFolding ? 56 : 40,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 12, right: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: visibleLines.map((line) {
-                      final region = line.foldableRegion;
-                      final hasFoldIndicator = region != null;
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Line numbers with fold indicators
+          if (widget.showLineNumbers)
+            SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.only(top: 12, right: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(lineCount, (index) {
+                    final lineNumber = index + 1;
+                    final region = _getRegionAtLine(index);
+                    final hasFoldIndicator = region != null;
+                    final isHidden = _isLineHidden(index);
 
-                      return SizedBox(
-                        height: lineHeight,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            // Fold indicator
-                            if (widget.enableFolding)
-                              SizedBox(
-                                width: 16,
-                                child: hasFoldIndicator
-                                    ? MouseRegion(
-                                        cursor: SystemMouseCursors.click,
-                                        child: GestureDetector(
-                                          onTap: () => toggleFold(region.startLine),
-                                          child: Icon(
-                                            region.isCollapsed
-                                                ? LucideIcons.chevronRight
-                                                : LucideIcons.chevronDown,
-                                            size: 12,
-                                            color: AppColors.mutedForeground,
-                                          ),
+                    if (isHidden) return const SizedBox.shrink();
+
+                    return SizedBox(
+                      width: widget.enableFolding ? 52 : 36,
+                      height: lineHeightPx,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          // Fold indicator
+                          if (widget.enableFolding)
+                            SizedBox(
+                              width: 16,
+                              child: hasFoldIndicator
+                                  ? MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: GestureDetector(
+                                        onTap: () => toggleFold(region.startLine),
+                                        child: Icon(
+                                          region.isCollapsed
+                                              ? LucideIcons.chevronRight
+                                              : LucideIcons.chevronDown,
+                                          size: 12,
+                                          color: AppColors.mutedForeground,
                                         ),
-                                      )
-                                    : null,
-                              ),
-                            // Line number
-                            Expanded(
-                              child: Text(
-                                '${line.lineNumber}',
-                                textAlign: TextAlign.right,
-                                style: AppTheme.monoStyle.copyWith(
-                                  color: AppColors.mutedForeground,
-                                  fontSize: 12,
-                                  height: 1.43,
-                                ),
-                              ),
+                                      ),
+                                    )
+                                  : null,
                             ),
-                            const SizedBox(width: 4),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                          // Line number
+                          Text(
+                            '$lineNumber',
+                            textAlign: TextAlign.right,
+                            style: AppTheme.monoStyle.copyWith(
+                              color: AppColors.mutedForeground,
+                              fontSize: fontSize,
+                              height: textLineHeight,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                      ),
+                    );
+                  }),
                 ),
               ),
+            ),
             // Code editor with syntax highlighting
             Expanded(
               child: CompositedTransformTarget(
                 link: _layerLink,
                 child: hasCollapsedRegions
-                    ? _buildFoldedView(visibleLines, lineHeight)
+                    ? _buildFoldedView(_getVisibleLines(), lineHeightPx)
                     : _buildHighlightedView(),
               ),
             ),
@@ -708,7 +712,6 @@ class CodeEditorState extends State<CodeEditor> {
               ),
           ],
         ),
-      ),
     );
   }
 
@@ -741,9 +744,14 @@ class CodeEditorState extends State<CodeEditor> {
 
   /// Build view with syntax highlighting using Text.rich + TextField overlay
   Widget _buildHighlightedView() {
+    const double fontSize = 14.0;
+    const double textLineHeight = 1.4; // This gives us 14 * 1.4 = 19.6px per line
+    const double cursorH = 17.0;
+
     final baseStyle = AppTheme.monoStyle.copyWith(
-      height: 1.5,
-      fontSize: 14,
+      fontSize: fontSize,
+      height: textLineHeight,
+      letterSpacing: 0.0,
     );
 
     return Stack(
@@ -751,8 +759,8 @@ class CodeEditorState extends State<CodeEditor> {
         // Syntax highlighted text (read-only, for display)
         Positioned.fill(
           child: IgnorePointer(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
               child: Text.rich(
                 TextSpan(
                   style: baseStyle,
@@ -769,19 +777,20 @@ class CodeEditorState extends State<CodeEditor> {
           maxLines: null,
           style: baseStyle.copyWith(color: Colors.transparent),
           cursorColor: AppColors.primary,
+          cursorHeight: cursorH,
           decoration: InputDecoration(
             border: InputBorder.none,
             isDense: true,
-            contentPadding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+            contentPadding: const EdgeInsets.all(12),
             hintText: _controller.text.isEmpty ? widget.hintText : null,
             hintStyle: TextStyle(
               color: AppColors.mutedForeground,
-              fontSize: 14,
-              height: 1.5,
+              fontSize: fontSize,
+              height: textLineHeight,
             ),
           ),
           onChanged: (text) {
-            setState(() {}); // Rebuild to update highlighting
+            setState(() {}); // Rebuild to update line numbers and highlighting
             widget.onChanged?.call(text);
           },
           onTap: widget.onTap,

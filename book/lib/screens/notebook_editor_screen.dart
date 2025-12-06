@@ -179,25 +179,14 @@ class _NotebookEditorScreenState extends State<NotebookEditorScreen> {
             margin: EdgeInsets.symmetric(horizontal: 12),
             color: AppColors.border,
           ),
-          // Kernel status
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: _kernelStatus == 'busy' ? AppColors.warning : AppColors.success,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _kernelStatus == 'busy' ? 'Running' : 'Python 3.11',
-                style: TextStyle(fontSize: 14, color: AppColors.foreground),
-              ),
-              const SizedBox(width: 4),
-              Icon(LucideIcons.chevronDown, size: 16, color: AppColors.mutedForeground),
-            ],
+          // Kernel status indicator
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: _kernelStatus == 'busy' ? AppColors.warning : AppColors.success,
+              shape: BoxShape.circle,
+            ),
           ),
         ],
       ),

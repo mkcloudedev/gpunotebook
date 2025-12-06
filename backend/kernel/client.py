@@ -43,14 +43,23 @@ class KernelClient:
     async def stream_output(self, msg_id: str) -> AsyncIterator[dict[str, Any]]:
         """Stream output messages for an execution."""
         import asyncio
+        from queue import Empty
 
         while True:
             try:
                 # Use asyncio.to_thread to avoid blocking the event loop
-                msg = await asyncio.to_thread(self._client.get_iopub_msg, timeout=1.0)
-            except Exception:
-                # Small delay to prevent tight loop
-                await asyncio.sleep(0.01)
+                msg = await asyncio.to_thread(self._client.get_iopub_msg, timeout=0.5)
+            except Empty:
+                # No message available, retry
+                continue
+            except TimeoutError:
+                # Timeout waiting for message, retry
+                continue
+            except Exception as e:
+                # Log unexpected errors but continue trying
+                import logging
+                logging.warning(f"stream_output error: {e}")
+                await asyncio.sleep(0.1)
                 continue
 
             if msg["parent_header"].get("msg_id") != msg_id:

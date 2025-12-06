@@ -48,13 +48,14 @@ class GPUMonitor:
 
     async def _fetch_status(self) -> Optional[GPUSystemStatus]:
         """Fetch GPU status from nvidia-smi."""
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 "nvidia-smi", "-q", "-x",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
 
             if proc.returncode != 0:
                 return None
@@ -63,6 +64,21 @@ class GPUMonitor:
 
         except FileNotFoundError:
             return None
+        except asyncio.TimeoutError:
+            if proc:
+                proc.kill()
+            return None
+        except OSError as e:
+            # Handle "Too many open files" and similar errors
+            return None
+        finally:
+            # Ensure process is cleaned up
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
 
     def _parse_nvidia_smi(self, xml_output: str) -> GPUSystemStatus:
         """Parse nvidia-smi XML output."""

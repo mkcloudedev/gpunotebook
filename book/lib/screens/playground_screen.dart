@@ -214,20 +214,56 @@ print(f"Tensor on GPU: {x}")
               ],
             ),
           ),
-          // Code editor
+          // Code editor with line numbers
           Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(16),
-              child: TextField(
-                controller: _codeController,
-                maxLines: null,
-                style: AppTheme.monoStyle,
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Line numbers
+                Container(
+                  padding: EdgeInsets.only(top: 16, left: 8, right: 8),
+                  color: AppColors.card,
+                  child: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _codeController,
+                    builder: (context, value, _) {
+                      final lineCount = '\n'.allMatches(value.text).length + 1;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: List.generate(lineCount, (i) => SizedBox(
+                          height: 14 * 1.4,
+                          child: Text(
+                            '${i + 1}',
+                            style: AppTheme.monoStyle.copyWith(
+                              color: AppColors.mutedForeground,
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
+                          ),
+                        )),
+                      );
+                    },
+                  ),
                 ),
-              ),
+                // Code input
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
+                    child: TextField(
+                      controller: _codeController,
+                      maxLines: null,
+                      style: AppTheme.monoStyle.copyWith(
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
