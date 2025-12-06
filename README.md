@@ -22,7 +22,8 @@ A full-stack web application for creating, managing, and executing interactive n
 
 ## Screenshots
 
-<!-- Add screenshots here -->
+### Notebook Editor with AI Assistant
+![Notebook Editor](docs/screenshots/notebook.png)
 
 ## Tech Stack
 
