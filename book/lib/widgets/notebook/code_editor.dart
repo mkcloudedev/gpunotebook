@@ -735,17 +735,19 @@ class CodeEditorState extends State<CodeEditor> {
             ),
           ),
           // Editable text with transparent color
-          EditableText(
-            controller: _controller,
-            focusNode: _focusNode,
-            style: baseStyle.copyWith(color: Colors.transparent),
-            cursorColor: AppColors.primary,
-            backgroundCursorColor: Colors.grey,
-            maxLines: null,
-            onChanged: (text) {
-              widget.onChanged?.call(text);
-            },
+          GestureDetector(
             onTap: widget.onTap,
+            child: EditableText(
+              controller: _controller,
+              focusNode: _focusNode,
+              style: baseStyle.copyWith(color: Colors.transparent),
+              cursorColor: AppColors.primary,
+              backgroundCursorColor: Colors.grey,
+              maxLines: null,
+              onChanged: (text) {
+                widget.onChanged?.call(text);
+              },
+            ),
           ),
         ],
       ),
