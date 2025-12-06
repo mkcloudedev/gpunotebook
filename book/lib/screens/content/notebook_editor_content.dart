@@ -527,6 +527,8 @@ class NotebookEditorContentState extends State<NotebookEditorContent> {
             String logType = 'stdout';
             String? message = output.text;
 
+            print('Output received: type=${output.outputType}, hasText=${output.text != null}, textPreview=${output.text?.substring(0, (output.text?.length ?? 0) > 50 ? 50 : (output.text?.length ?? 0))}');
+
             if (output.outputType == 'error') {
               logType = 'error';
               message = output.text ?? '${output.ename}: ${output.evalue}';
@@ -535,6 +537,8 @@ class NotebookEditorContentState extends State<NotebookEditorContent> {
               }
             } else if (output.outputType == 'stream') {
               logType = output.text?.contains('Error') == true ? 'stderr' : 'stdout';
+            } else if (output.outputType == 'execute_result') {
+              logType = 'success';
             }
 
             if (message != null && message.isNotEmpty) {
