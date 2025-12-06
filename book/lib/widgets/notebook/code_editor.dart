@@ -712,45 +712,29 @@ class CodeEditorState extends State<CodeEditor> {
     );
   }
 
-  /// Build normal view without folding
+  /// Build normal view without folding - simple TextField with syntax highlighting
   Widget _buildNormalView() {
-    final baseStyle = AppTheme.monoStyle.copyWith(
-      height: 1.43,
-      fontSize: 14,
-    );
-
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
-      child: Stack(
-        children: [
-          // RichText for syntax highlighting
-          Positioned.fill(
-            child: IgnorePointer(
-              child: RichText(
-                text: TextSpan(
-                  style: baseStyle,
-                  children: _buildHighlightedSpans(_controller.text),
-                ),
-              ),
-            ),
-          ),
-          // Editable text with transparent color
-          GestureDetector(
-            onTap: widget.onTap,
-            child: EditableText(
-              controller: _controller,
-              focusNode: _focusNode,
-              style: baseStyle.copyWith(color: Colors.transparent),
-              cursorColor: AppColors.primary,
-              backgroundCursorColor: Colors.grey,
-              maxLines: null,
-              onChanged: (text) {
-                widget.onChanged?.call(text);
-              },
-            ),
-          ),
-        ],
+    return TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      maxLines: null,
+      style: AppTheme.monoStyle.copyWith(
+        height: 1.43,
+        fontSize: 14,
+        color: AppColors.foreground,
       ),
+      cursorColor: AppColors.primary,
+      decoration: InputDecoration(
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.all(12),
+        hintText: _controller.text.isEmpty ? widget.hintText : null,
+        hintStyle: TextStyle(
+          color: AppColors.mutedForeground,
+          fontSize: 14,
+        ),
+      ),
+      onChanged: widget.onChanged,
+      onTap: widget.onTap,
     );
   }
 
