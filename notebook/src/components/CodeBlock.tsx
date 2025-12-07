@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Copy, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 const languages = ["Java", "Python", "JavaScript", "Go", "cURL"];
 
@@ -90,9 +90,11 @@ export const CodeBlock = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(codeSnippets[selectedLang]);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(codeSnippets[selectedLang]);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (

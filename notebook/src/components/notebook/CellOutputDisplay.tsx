@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronRight, Copy, Check, AlertCircle, Terminal, Maximize2, Minimize2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { CellOutput } from "@/types/notebook";
 import { Button } from "@/components/ui/button";
 import katex from "katex";
@@ -121,10 +121,12 @@ interface OutputItemProps {
 const OutputItem = ({ output, compact = false }: OutputItemProps) => {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   // Error output

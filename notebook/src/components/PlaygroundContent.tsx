@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Play, Square, Copy, Eraser, Terminal, Code2, ChevronDown, Loader2, Home, Sparkles, Trash2, Activity, Check, RotateCcw, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Breadcrumb } from "./Breadcrumb";
 import {
@@ -143,10 +143,12 @@ export const PlaygroundContent = () => {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyToClipboard(code);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleClear = () => {

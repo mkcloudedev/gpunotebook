@@ -10,7 +10,7 @@ import {
   Inbox,
   Box,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -259,7 +259,7 @@ export const VariableInspectorPanel = ({
   }, []);
 
   const handleCopy = useCallback((text: string) => {
-    navigator.clipboard.writeText(text);
+    copyToClipboard(text);
   }, []);
 
   // Filter variables

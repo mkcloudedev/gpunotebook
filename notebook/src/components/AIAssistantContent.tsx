@@ -29,7 +29,7 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard as copyText } from "@/lib/utils";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -439,10 +439,12 @@ export const AIAssistantContent = () => {
     createNewConversation();
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+  const copyToClipboard = async (text: string, id: string) => {
+    const success = await copyText(text);
+    if (success) {
+      setCopied(id);
+      setTimeout(() => setCopied(null), 2000);
+    }
   };
 
   const extractCodeBlocks = (content: string): string[] => {

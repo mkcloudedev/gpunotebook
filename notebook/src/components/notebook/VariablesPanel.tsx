@@ -22,7 +22,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { executionService, InspectionResult } from "@/services/executionService";
 
 interface VariableInfo {
@@ -160,10 +160,12 @@ print(json.dumps(_get_notebook_variables()))
   };
 
   // Copy variable name to clipboard
-  const handleCopy = (varName: string) => {
-    navigator.clipboard.writeText(varName);
-    setCopiedVar(varName);
-    setTimeout(() => setCopiedVar(null), 2000);
+  const handleCopy = async (varName: string) => {
+    const success = await copyToClipboard(varName);
+    if (success) {
+      setCopiedVar(varName);
+      setTimeout(() => setCopiedVar(null), 2000);
+    }
   };
 
   // Toggle expansion

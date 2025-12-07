@@ -25,7 +25,7 @@ import {
   Eraser,
   SkipForward,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { Cell, CellOutput, CellTag, CellMetadata } from "@/types/notebook";
 import { Button } from "./ui/button";
 import {
@@ -331,10 +331,12 @@ const CellComponent = ({
     }
   }, [cell.isExecuting, cell.executionStartTime]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(cell.source);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const success = await copyToClipboard(cell.source);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleExecuteAndMove = () => {
