@@ -2,8 +2,9 @@
 Notebooks API endpoints.
 """
 import uuid
+import json
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, UploadFile, File
 
 from models.notebook import (
     Notebook,
@@ -13,6 +14,7 @@ from models.notebook import (
     Cell,
     CellCreate,
     CellUpdate,
+    CellOutput,
 )
 from services.notebook_store import notebook_store
 
@@ -34,6 +36,95 @@ async def create_notebook(request: NotebookCreate):
         cells=[],
         metadata=NotebookMetadata(kernel_name=request.kernel_name),
     )
+    await notebook_store.save(notebook)
+    return notebook
+
+
+@router.post("/import", response_model=Notebook, status_code=status.HTTP_201_CREATED)
+async def import_notebook(file: UploadFile = File(...)):
+    """Import a Jupyter notebook (.ipynb) file."""
+    if not file.filename or not file.filename.endswith('.ipynb'):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be a Jupyter notebook (.ipynb)"
+        )
+
+    try:
+        content = await file.read()
+        ipynb_data = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON in notebook file"
+        )
+
+    # Extract notebook name from filename (without extension)
+    name = file.filename.rsplit('.', 1)[0] if file.filename else "Imported Notebook"
+
+    # Parse cells from ipynb format
+    cells = []
+    for ipynb_cell in ipynb_data.get("cells", []):
+        # Get source - can be string or list of strings
+        source = ipynb_cell.get("source", "")
+        if isinstance(source, list):
+            source = "".join(source)
+
+        # Map cell type
+        cell_type = ipynb_cell.get("cell_type", "code")
+        if cell_type not in ["code", "markdown"]:
+            cell_type = "code"  # Default to code for raw, etc.
+
+        # Parse outputs for code cells
+        outputs = []
+        if cell_type == "code":
+            for ipynb_output in ipynb_cell.get("outputs", []):
+                output_type = ipynb_output.get("output_type", "stream")
+
+                # Map output types
+                if output_type == "execute_result":
+                    output_type = "execute_result"
+                elif output_type == "display_data":
+                    output_type = "display_data"
+                elif output_type == "error":
+                    output_type = "error"
+                else:
+                    output_type = "stream"
+
+                # Get text (can be string or list)
+                text = ipynb_output.get("text", "")
+                if isinstance(text, list):
+                    text = "".join(text)
+
+                output = CellOutput(
+                    output_type=output_type,
+                    text=text if text else None,
+                    data=ipynb_output.get("data"),
+                    ename=ipynb_output.get("ename"),
+                    evalue=ipynb_output.get("evalue"),
+                    traceback=ipynb_output.get("traceback"),
+                )
+                outputs.append(output)
+
+        cell = Cell(
+            id=ipynb_cell.get("id") or str(uuid.uuid4()),
+            cell_type=cell_type,
+            source=source,
+            outputs=outputs,
+            execution_count=ipynb_cell.get("execution_count"),
+        )
+        cells.append(cell)
+
+    # Create the notebook
+    notebook = Notebook(
+        id=str(uuid.uuid4()),
+        name=name,
+        cells=cells,
+        metadata=NotebookMetadata(
+            kernel_name=ipynb_data.get("metadata", {}).get("kernelspec", {}).get("name", "python3"),
+            language=ipynb_data.get("metadata", {}).get("language_info", {}).get("name", "python"),
+        ),
+    )
+
     await notebook_store.save(notebook)
     return notebook
 

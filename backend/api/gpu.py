@@ -51,3 +51,22 @@ async def get_gpu_processes(gpu_index: int):
         raise HTTPException(status_code=404, detail="GPU not found")
 
     return {"processes": status.gpus[gpu_index].processes}
+
+
+@router.get("/{gpu_index}/history")
+async def get_gpu_history(gpu_index: int, duration: str = "1h"):
+    """Get GPU metrics history.
+
+    Note: This is a placeholder. Real implementation would require
+    a time-series database to store historical metrics.
+    """
+    status = await gpu_monitor.get_status()
+    if not status:
+        raise HTTPException(status_code=503, detail="GPU monitoring unavailable")
+
+    if gpu_index >= len(status.gpus):
+        raise HTTPException(status_code=404, detail="GPU not found")
+
+    # Return empty history for now
+    # In production, this would query a time-series database
+    return []

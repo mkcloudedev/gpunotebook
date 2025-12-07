@@ -38,8 +38,15 @@ class OpenAIProvider(BaseAIProvider):
         return self._client
 
     async def chat(self, request: AIRequest) -> AIResponse:
+        """Send chat request to OpenAI."""
+        client = self._get_client()
+
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+
         messages.extend([
-            {"role": msg.role, "content": msg.content}
+            {"role": msg.role.value, "content": msg.content}
             for msg in request.messages
         ])
 
@@ -87,11 +94,23 @@ class OpenAIProvider(BaseAIProvider):
                 temperature=request.temperature,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
             async for chunk in stream:
-                if chunk.choices[0].delta.content:
+                if chunk.choices and chunk.choices[0].delta.content:
                     yield json.dumps({"content": chunk.choices[0].delta.content})
+
+                # Final chunk with usage
+                if chunk.usage:
+                    yield json.dumps({
+                        "done": True,
+                        "usage": {
+                            "input_tokens": chunk.usage.prompt_tokens,
+                            "output_tokens": chunk.usage.completion_tokens,
+                        },
+                        "model": chunk.model,
+                    })
 
         except Exception as e:
             yield json.dumps({"error": str(e)})

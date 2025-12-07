@@ -103,6 +103,25 @@ async def get_kaggle_status():
         }
 
 
+@router.get("/user")
+async def get_kaggle_user():
+    """Get current Kaggle user info"""
+    if not KAGGLE_JSON.exists():
+        raise HTTPException(status_code=404, detail="Kaggle credentials not configured")
+
+    try:
+        with open(KAGGLE_JSON) as f:
+            creds = json.load(f)
+
+        return {
+            "username": creds.get("username", "Unknown"),
+            "displayName": creds.get("username", "Unknown"),
+            "tier": "Contributor"  # Default tier, could be fetched via API if needed
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/credentials")
 async def set_kaggle_credentials(credentials: KaggleCredentials):
     """Set Kaggle API credentials"""

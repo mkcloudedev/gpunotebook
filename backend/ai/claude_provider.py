@@ -108,6 +108,17 @@ class ClaudeProvider(BaseAIProvider):
                 async for text in stream.text_stream:
                     yield json.dumps({"content": text})
 
+                # Get final message with usage stats
+                final_message = await stream.get_final_message()
+                yield json.dumps({
+                    "done": True,
+                    "usage": {
+                        "input_tokens": final_message.usage.input_tokens,
+                        "output_tokens": final_message.usage.output_tokens,
+                    },
+                    "model": final_message.model,
+                })
+
         except Exception as e:
             yield json.dumps({"error": str(e)})
 

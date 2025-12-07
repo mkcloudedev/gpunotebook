@@ -53,15 +53,6 @@ uploads/
 data/
 *.ipynb_checkpoints/
 
-# Flutter
-book/.dart_tool/
-book/.packages
-book/.pub-cache/
-book/.pub/
-book/build/
-book/*.iml
-book/.metadata
-
 # macOS
 .DS_Store
 .AppleDouble
