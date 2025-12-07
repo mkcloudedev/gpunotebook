@@ -41,9 +41,17 @@ export function useKernelExecution(
 
   const outputBufferRef = useRef<Map<string, CellOutput[]>>(new Map());
   const executionResolveRef = useRef<Map<string, () => void>>(new Map());
+  const isMountedRef = useRef(true);
+  const isConnectingRef = useRef(false);
 
   // Connect to or create a kernel
   const connect = useCallback(async () => {
+    // Prevent duplicate connections
+    if (isConnectingRef.current) {
+      return;
+    }
+    isConnectingRef.current = true;
+
     try {
       setKernelStatus("starting");
 
@@ -53,6 +61,13 @@ export function useKernelExecution(
       if (notebookId) {
         // Try to get existing kernel for notebook
         const kernels = await kernelService.list();
+
+        // Check if component was unmounted during async operation
+        if (!isMountedRef.current) {
+          isConnectingRef.current = false;
+          return;
+        }
+
         const existingKernel = kernels.find((k) => k.notebookId === notebookId);
 
         if (existingKernel) {
@@ -65,11 +80,25 @@ export function useKernelExecution(
         kernelInstance = await kernelService.create("python3");
       }
 
+      // Check if component was unmounted during async operation
+      if (!isMountedRef.current) {
+        isConnectingRef.current = false;
+        return;
+      }
+
       setKernel(kernelInstance);
 
       // Connect WebSocket
       const wsUrl = apiClient.getWebSocketUrl(`/ws/kernel/${kernelInstance.id}`);
       await websocketService.connect(wsUrl);
+
+      // Check if component was unmounted during async operation
+      if (!isMountedRef.current) {
+        websocketService.disconnect();
+        isConnectingRef.current = false;
+        return;
+      }
+
       setIsConnected(true);
       setKernelStatus("idle");
 
@@ -82,9 +111,18 @@ export function useKernelExecution(
         handleExecutionState(state);
       });
     } catch (error) {
-      console.error("Failed to connect to kernel:", error);
-      setKernelStatus("error");
-      setIsConnected(false);
+      // Ignore abort errors from component unmount
+      if (error instanceof Error && error.name === "AbortError") {
+        // Component was unmounted, ignore
+      } else {
+        console.error("Failed to connect to kernel:", error);
+        if (isMountedRef.current) {
+          setKernelStatus("error");
+          setIsConnected(false);
+        }
+      }
+    } finally {
+      isConnectingRef.current = false;
     }
   }, [notebookId]);
 
@@ -274,12 +312,15 @@ export function useKernelExecution(
     setExecutingCellId(null);
   }, []);
 
-  // Cleanup on unmount
+  // Track mount state and cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
+
     return () => {
-      disconnect();
+      isMountedRef.current = false;
+      websocketService.disconnect();
     };
-  }, [disconnect]);
+  }, []);
 
   return {
     kernel,
