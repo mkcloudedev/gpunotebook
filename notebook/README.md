@@ -1,73 +1,108 @@
-# Welcome to your Lovable project
+# GPU Notebook - Frontend
 
-## Project info
+React + TypeScript frontend for GPU Notebook, a Python notebook environment with GPU acceleration and AI integration.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Tech Stack
 
-## How can I edit this code?
+- **React 18** + **TypeScript 5**
+- **Vite** - Fast build tool and dev server
+- **Tailwind CSS** - Utility-first CSS framework
+- **shadcn/ui** - Accessible UI components
+- **Monaco Editor** - VS Code-powered code editor
+- **React Router** - Client-side routing
+- **TanStack Query** - Data fetching and caching
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+- Interactive notebook editor with Monaco code cells
+- Real-time GPU monitoring with speedometer gauges
+- AI chat integration (Claude, GPT-4, Gemini)
+- File browser and management
+- Package manager for pip packages
+- AutoML experiment configuration
+- Kaggle dataset integration
+- Keyboard shortcuts (Jupyter-compatible)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Getting Started
 
-Changes made via Lovable will be committed automatically to this repo.
+### Prerequisites
 
-**Use your preferred IDE**
+- Node.js 18+
+- npm or bun
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Installation
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+```bash
+# Install dependencies
+npm install
 
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+# Create environment file
+cp .env.example .env
+# Edit .env with your backend URL
 ```
 
-**Edit a file directly in GitHub**
+### Development
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+# Start development server
+npm run dev
 
-**Use GitHub Codespaces**
+# Build for production
+npm run build
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# Preview production build
+npm run preview
 
-## What technologies are used for this project?
+# Lint code
+npm run lint
+```
 
-This project is built with:
+### Environment Variables
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Create a `.env` file in the root directory:
 
-## How can I deploy this project?
+```env
+VITE_API_URL=http://localhost:8000
+```
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Project Structure
 
-## Can I connect a custom domain to my Lovable project?
+```
+src/
+├── components/           # React components
+│   ├── ui/              # shadcn/ui components
+│   ├── notebook/        # Notebook-specific components
+│   ├── Dashboard.tsx    # Main dashboard
+│   ├── Sidebar.tsx      # Navigation sidebar
+│   └── ...
+├── pages/               # Page components
+│   ├── NotebookEditor.tsx
+│   ├── Index.tsx
+│   └── ...
+├── services/            # API services
+│   ├── apiClient.ts     # HTTP client
+│   ├── notebookService.ts
+│   ├── kernelService.ts
+│   ├── gpuService.ts
+│   ├── aiService.ts
+│   └── ...
+├── hooks/               # Custom React hooks
+│   ├── useKernelExecution.ts
+│   ├── useKeyboardShortcuts.ts
+│   └── ...
+├── types/               # TypeScript types
+└── lib/                 # Utilities
+```
 
-Yes, you can!
+## Scripts
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
+| `npm run lint` | Run ESLint |
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## License
+
+MIT

@@ -4,20 +4,21 @@ A full-stack web application for creating, managing, and executing interactive n
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-green.svg)
-![Flutter](https://img.shields.io/badge/flutter-3.0+-blue.svg)
+![React](https://img.shields.io/badge/React-18+-blue.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)
 ![CUDA](https://img.shields.io/badge/CUDA-12.2-green.svg)
 
 ## Features
 
 - **Interactive Notebooks** - Create and execute code cells with real-time output
-- **GPU Monitoring** - Real-time GPU status, memory usage, and process tracking
+- **GPU Monitoring** - Real-time GPU status with speedometer gauges, memory usage, and process tracking
 - **AI Integration** - Multi-provider support (Claude, GPT-4, Gemini) for code assistance
-- **Syntax Highlighting** - Python syntax highlighting with code folding
+- **Monaco Editor** - VS Code-powered editor with syntax highlighting and IntelliSense
 - **Kernel Management** - Multiple concurrent Jupyter kernels
 - **File Management** - Upload, download, and browse files
 - **Package Manager** - Install and manage Python packages
-- **AutoML** - Automated machine learning pipelines
-- **Dataset Management** - Upload datasets and Kaggle integration
+- **AutoML** - Automated machine learning pipelines with file browser
+- **Kaggle Integration** - Browse and download Kaggle datasets
 - **Real-time Updates** - WebSocket-based live updates
 
 ## Screenshots
@@ -28,9 +29,10 @@ A full-stack web application for creating, managing, and executing interactive n
 ## Tech Stack
 
 ### Frontend
-- **Flutter** (Web)
-- **Dart 3.0+**
-- Google Fonts, Lucide Icons
+- **React 18** + **TypeScript**
+- **Vite** for fast development
+- **Tailwind CSS** + **shadcn/ui** components
+- **Monaco Editor** for code editing
 - WebSocket for real-time communication
 
 ### Backend
@@ -74,14 +76,17 @@ gpu-notebook/
 │   ├── Dockerfile
 │   └── docker-compose.yml
 │
-└── book/                      # Flutter frontend
-    ├── lib/
-    │   ├── screens/           # Application screens
-    │   ├── widgets/           # Reusable components
+└── notebook/                   # React + TypeScript frontend
+    ├── src/
+    │   ├── components/        # React components
+    │   │   ├── ui/            # shadcn/ui components
+    │   │   └── notebook/      # Notebook-specific components
+    │   ├── pages/             # Page components
     │   ├── services/          # API services
-    │   ├── models/            # Data models
-    │   └── core/              # Theme & routing
-    └── pubspec.yaml
+    │   ├── hooks/             # Custom React hooks
+    │   └── types/             # TypeScript types
+    ├── package.json
+    └── vite.config.ts
 ```
 
 ## Getting Started
@@ -89,7 +94,7 @@ gpu-notebook/
 ### Prerequisites
 
 - Python 3.11+
-- Flutter 3.0+
+- Node.js 18+ and npm
 - Docker & Docker Compose (optional)
 - NVIDIA GPU with CUDA 12.2 (optional, for GPU features)
 
@@ -130,17 +135,28 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 1. Navigate to the frontend directory:
 ```bash
-cd book
+cd notebook
 ```
 
 2. Install dependencies:
 ```bash
-flutter pub get
+npm install
 ```
 
-3. Run the application:
+3. Configure environment variables:
 ```bash
-flutter run -d chrome
+# Create .env file with your backend URL
+echo "VITE_API_URL=http://localhost:8000" > .env
+```
+
+4. Run the development server:
+```bash
+npm run dev
+```
+
+5. Build for production:
+```bash
+npm run build
 ```
 
 ### Docker Setup
@@ -269,5 +285,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Jupyter](https://jupyter.org/) for kernel architecture
 - [FastAPI](https://fastapi.tiangolo.com/) for the backend framework
-- [Flutter](https://flutter.dev/) for the frontend framework
+- [React](https://react.dev/) for the frontend framework
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/) for the code editor
+- [shadcn/ui](https://ui.shadcn.com/) for UI components
 - [Anthropic](https://anthropic.com/), [OpenAI](https://openai.com/), [Google](https://ai.google/) for AI APIs
