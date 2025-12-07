@@ -51,6 +51,7 @@ import { useKernelExecution } from "@/hooks/useKernelExecution";
 import { CellOutput } from "@/types/notebook";
 import { MonacoCodeEditor } from "./notebook/MonacoCodeEditor";
 import { parseAIResponse, AIAction, ActionResult } from "@/services/aiToolsHandler";
+import apiClient from "@/services/apiClient";
 
 interface AIMessage {
   id: string;
@@ -134,48 +135,14 @@ const QUICK_ACTIONS = [
   { icon: FileCode, label: "Document", prompt: "Add docstrings and comments to document this code" },
 ];
 
-// Local storage key for chat history
-const STORAGE_KEY = "ai_assistant_history";
-const CONVERSATIONS_KEY = "ai_assistant_conversations";
-
-// Load conversations from localStorage
-const loadConversations = (): Conversation[] => {
-  try {
-    const data = localStorage.getItem(CONVERSATIONS_KEY);
-    if (data) {
-      const parsed = JSON.parse(data);
-      return parsed.map((conv: Conversation) => ({
-        ...conv,
-        createdAt: new Date(conv.createdAt),
-        updatedAt: new Date(conv.updatedAt),
-        messages: conv.messages.map((m: AIMessage) => ({
-          ...m,
-          timestamp: new Date(m.timestamp),
-        })),
-      }));
-    }
-  } catch (e) {
-    console.error("Error loading conversations:", e);
-  }
-  return [];
-};
-
-// Save conversations to localStorage
-const saveConversations = (conversations: Conversation[]) => {
-  try {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations));
-  } catch (e) {
-    console.error("Error saving conversations:", e);
-  }
-};
-
 export const AIAssistantContent = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Conversations state
-  const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations());
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   // Messages for current conversation
   const [messages, setMessages] = useState<AIMessage[]>([
@@ -240,10 +207,52 @@ export const AIAssistantContent = () => {
     });
   }, []);
 
-  // Save conversations when they change
+  // Load conversations from backend on mount
   useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+    const loadFromBackend = async () => {
+      try {
+        const response = await apiClient.get<{ conversations: Array<{
+          id: string;
+          title: string;
+          created_at: string;
+          updated_at: string;
+          message_count: number;
+        }> }>("/api/ai/conversations");
+
+        if (response.conversations && response.conversations.length > 0) {
+          const convs = response.conversations.map(c => ({
+            id: c.id,
+            title: c.title,
+            messages: [],
+            createdAt: new Date(c.created_at),
+            updatedAt: new Date(c.updated_at),
+          }));
+          setConversations(convs);
+        }
+      } catch (error) {
+        console.error("Failed to load conversations from backend:", error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+    loadFromBackend();
+  }, []);
+
+  // Save conversation to backend when messages change
+  const saveConversationToBackend = useCallback(async (convId: string, msgs: AIMessage[]) => {
+    try {
+      await apiClient.post(`/api/ai/conversations/${convId}`, {
+        messages: msgs.map(m => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+        })),
+      });
+    } catch (error) {
+      console.error("Failed to save conversation:", error);
+    }
+  }, []);
 
   // Update token count - use real tokens when available, estimate for user messages
   useEffect(() => {
@@ -265,31 +274,63 @@ export const AIAssistantContent = () => {
   };
 
   // Create new conversation
-  const createNewConversation = useCallback(() => {
-    const newConv: Conversation = {
-      id: Date.now().toString(),
-      title: "New Chat",
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    setConversations((prev) => [newConv, ...prev]);
-    setCurrentConversationId(newConv.id);
-    setMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        content: WELCOME_MESSAGE,
-        timestamp: new Date(),
-      },
-    ]);
-    setConversationTitle("New Chat");
+  const createNewConversation = useCallback(async () => {
+    try {
+      // Create conversation in backend
+      const response = await apiClient.post<{
+        id: string;
+        title: string;
+        created_at: string;
+        updated_at: string;
+      }>("/api/ai/conversations", {});
+
+      const newConv: Conversation = {
+        id: response.id,
+        title: response.title,
+        messages: [],
+        createdAt: new Date(response.created_at),
+        updatedAt: new Date(response.updated_at),
+      };
+      setConversations((prev) => [newConv, ...prev]);
+      setCurrentConversationId(newConv.id);
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content: WELCOME_MESSAGE,
+          timestamp: new Date(),
+        },
+      ]);
+      setConversationTitle("New Chat");
+    } catch (error) {
+      console.error("Failed to create conversation:", error);
+      // Fallback to local creation
+      const newConv: Conversation = {
+        id: Date.now().toString(),
+        title: "New Chat",
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      setConversations((prev) => [newConv, ...prev]);
+      setCurrentConversationId(newConv.id);
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content: WELCOME_MESSAGE,
+          timestamp: new Date(),
+        },
+      ]);
+      setConversationTitle("New Chat");
+    }
   }, []);
 
   // Save current messages to conversation
-  const saveCurrentConversation = useCallback(() => {
+  const saveCurrentConversation = useCallback(async () => {
     if (!currentConversationId) return;
 
+    // Update local state
     setConversations((prev) =>
       prev.map((conv) =>
         conv.id === currentConversationId
@@ -297,20 +338,56 @@ export const AIAssistantContent = () => {
           : conv
       )
     );
-  }, [currentConversationId, messages, conversationTitle]);
+
+    // Save to backend
+    await saveConversationToBackend(currentConversationId, messages);
+  }, [currentConversationId, messages, conversationTitle, saveConversationToBackend]);
 
   // Load a conversation
-  const loadConversation = useCallback((conv: Conversation) => {
+  const loadConversation = useCallback(async (conv: Conversation) => {
     setCurrentConversationId(conv.id);
-    setMessages(conv.messages.length > 0 ? conv.messages : [
-      {
-        id: "welcome",
-        role: "assistant",
-        content: WELCOME_MESSAGE,
-        timestamp: new Date(),
-      },
-    ]);
     setConversationTitle(conv.title);
+
+    // Load messages from backend
+    try {
+      const response = await apiClient.get<{
+        messages: Array<{
+          id: string;
+          role: string;
+          content: string;
+          created_at: string;
+        }>;
+      }>(`/api/ai/conversations/${conv.id}`);
+
+      if (response.messages && response.messages.length > 0) {
+        const loadedMessages: AIMessage[] = response.messages.map(m => ({
+          id: m.id,
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+          timestamp: new Date(m.created_at),
+        }));
+        setMessages(loadedMessages);
+      } else {
+        setMessages([
+          {
+            id: "welcome",
+            role: "assistant",
+            content: WELCOME_MESSAGE,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error("Failed to load conversation messages:", error);
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content: WELCOME_MESSAGE,
+          timestamp: new Date(),
+        },
+      ]);
+    }
   }, []);
 
   // Send message with real API
@@ -453,7 +530,7 @@ Use tools when the user asks you to run code, manage files, or perform actions.`
         }
       }
 
-      // Save to conversation
+      // Save to conversation (local and backend)
       if (currentConversationId) {
         setConversations((prev) =>
           prev.map((conv) =>
@@ -462,6 +539,8 @@ Use tools when the user asks you to run code, manage files, or perform actions.`
               : conv
           )
         );
+        // Save to backend
+        await saveConversationToBackend(currentConversationId, updatedMessages);
       }
     } catch (error) {
       console.error("AI chat error:", error);

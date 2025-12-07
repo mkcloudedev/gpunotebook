@@ -568,6 +568,158 @@ class ExportDatasetRequest(BaseModel):
     format: str  # csv, xlsx, parquet, json
 
 
+class AdvancedScrapeRequest(BaseModel):
+    """Request model for advanced web scraping with agent config."""
+    url: str
+    agent_type: str = "basic"  # basic, playwright, selenium
+    user_agent: str = "chrome_windows"
+    selectors: Optional[Dict[str, str]] = None
+    output_name: str
+    output_format: str = "csv"
+    wait_for_selector: Optional[str] = None
+    scroll_page: bool = False
+    timeout: int = 30
+
+
+class CrawlRequest(BaseModel):
+    """Request model for website crawling."""
+    start_url: str
+    max_pages: int = 10
+    url_pattern: Optional[str] = None
+    selectors: Optional[Dict[str, str]] = None
+    agent_type: str = "basic"
+
+
+# ============================================================================
+# ADVANCED WEB SCRAPING WITH AGENTS
+# ============================================================================
+
+@router.get("/scraper/agents")
+async def get_available_agents():
+    """Get available scraper agents and user agents."""
+    from services.scraper_service import scraper_service
+    return {
+        "agent_types": [
+            {"id": "basic", "name": "Basic HTTP", "description": "Fast HTTP requests, good for static pages"},
+            {"id": "playwright", "name": "Playwright Browser", "description": "Headless Chrome for JavaScript-heavy sites"},
+            {"id": "selenium", "name": "Selenium Browser", "description": "Full browser automation for complex sites"},
+        ],
+        "user_agents": [
+            {"id": k, "name": k.replace("_", " ").title(), "value": v[:50] + "..."}
+            for k, v in scraper_service.get_user_agents().items()
+        ]
+    }
+
+
+@router.post("/scraper/scrape")
+async def advanced_scrape(request: AdvancedScrapeRequest):
+    """Scrape URL with configurable agent."""
+    try:
+        from services.scraper_service import scraper_service
+
+        config = {
+            "user_agent": request.user_agent,
+            "timeout": request.timeout,
+            "wait_for_selector": request.wait_for_selector,
+            "scroll_page": request.scroll_page,
+        }
+
+        if request.selectors:
+            result = await scraper_service.scrape_and_save(
+                url=request.url,
+                selectors=request.selectors,
+                output_name=request.output_name,
+                output_format=request.output_format,
+                agent_type=request.agent_type,
+                config=config,
+            )
+        else:
+            # Just fetch and return HTML info
+            result = await scraper_service.scrape_url(
+                url=request.url,
+                agent_type=request.agent_type,
+                config=config,
+            )
+            # Don't return full HTML
+            result.pop("html", None)
+
+        return result
+
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent not available: {e}"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scraper/extract-tables")
+async def extract_tables_from_url(
+    url: str,
+    agent_type: str = "basic",
+    user_agent: str = "chrome_windows"
+):
+    """Extract all tables from a URL."""
+    try:
+        from services.scraper_service import scraper_service
+
+        config = {"user_agent": user_agent}
+        result = await scraper_service.scrape_url(url, agent_type, config)
+        tables = await scraper_service.extract_tables(result["html"])
+
+        return {
+            "url": url,
+            "tables_found": len(tables),
+            "tables": tables,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scraper/extract-links")
+async def extract_links_from_url(
+    url: str,
+    filter_pattern: Optional[str] = None,
+    agent_type: str = "basic",
+    user_agent: str = "chrome_windows"
+):
+    """Extract all links from a URL."""
+    try:
+        from services.scraper_service import scraper_service
+
+        config = {"user_agent": user_agent}
+        result = await scraper_service.scrape_url(url, agent_type, config)
+        links = await scraper_service.extract_links(result["html"], url, filter_pattern)
+
+        return {
+            "url": url,
+            "links_found": len(links),
+            "links": links[:100],  # Limit to 100 links
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scraper/crawl")
+async def crawl_website(request: CrawlRequest):
+    """Crawl a website following links."""
+    try:
+        from services.scraper_service import scraper_service
+
+        result = await scraper_service.crawl_site(
+            start_url=request.start_url,
+            max_pages=request.max_pages,
+            url_pattern=request.url_pattern,
+            selectors=request.selectors,
+            agent_type=request.agent_type,
+        )
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/split")
 async def split_dataset(request: SplitDatasetRequest):
     """Split dataset into train and test sets."""

@@ -14,6 +14,8 @@ import {
   Gem,
   History,
   Plus,
+  Terminal,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AIMessage, AIProvider, Cell } from "@/types/notebook";
@@ -101,7 +103,19 @@ export const AIChatPanel = ({
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<AIProvider>("claude");
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>("claude-code");
+  const [claudeCodeAvailable, setClaudeCodeAvailable] = useState<boolean | null>(null);
+
+  // Check Claude Code CLI availability
+  useEffect(() => {
+    aiService.getClaudeCodeStatus().then((status) => {
+      setClaudeCodeAvailable(status.available);
+      // If Claude Code is not available, fallback to Claude API
+      if (!status.available) {
+        setSelectedProvider("claude");
+      }
+    });
+  }, []);
 
   // Load chat history from backend on mount
   useEffect(() => {
@@ -164,6 +178,8 @@ export const AIChatPanel = ({
   // State for showing action results
   const [actionResults, setActionResults] = useState<ActionResult[]>([]);
 
+  const [streamingContent, setStreamingContent] = useState("");
+
   const handleSend = async () => {
     const content = inputValue.trim();
     if (!content || isLoading) return;
@@ -180,6 +196,7 @@ export const AIChatPanel = ({
     setInputValue("");
     setIsLoading(true);
     setActionResults([]);
+    setStreamingContent("");
 
     try {
       // Build notebook context for AI
@@ -197,18 +214,39 @@ export const AIChatPanel = ({
           content: m.content.trim(),
         }));
 
-      // Call AI API
-      const response = await aiService.chat({
-        provider: selectedProvider,
-        messages: apiMessages,
-        systemPrompt: NOTEBOOK_SYSTEM_PROMPT,
-        notebookContext,
-        maxTokens: 4096,
-        temperature: 0.7,
-      });
+      let responseContent = "";
+
+      // Use Claude Code CLI if selected
+      if (selectedProvider === "claude-code") {
+        // Use Claude Code streaming
+        for await (const chunk of aiService.claudeCodeChatStream({
+          messages: apiMessages,
+          systemPrompt: NOTEBOOK_SYSTEM_PROMPT,
+          notebookContext,
+        })) {
+          if (chunk.type === "content" && chunk.content) {
+            responseContent += chunk.content;
+            setStreamingContent(responseContent);
+            scrollToBottom();
+          } else if (chunk.type === "error") {
+            throw new Error(chunk.content || "Claude Code error");
+          }
+        }
+      } else {
+        // Call regular AI API
+        const response = await aiService.chat({
+          provider: selectedProvider,
+          messages: apiMessages,
+          systemPrompt: NOTEBOOK_SYSTEM_PROMPT,
+          notebookContext,
+          maxTokens: 4096,
+          temperature: 0.7,
+        });
+        responseContent = response.message;
+      }
 
       // Parse response for actions
-      const parsed = parseAIResponse(response.message);
+      const parsed = parseAIResponse(responseContent);
 
       // Process any actions
       let results: ActionResult[] = [];
@@ -218,18 +256,18 @@ export const AIChatPanel = ({
       }
 
       // Build response message with action results
-      let responseContent = parsed.message;
+      let finalContent = parsed.message;
       if (results.length > 0) {
         const actionSummary = results
           .map((r) => `• ${r.tool}: ${r.success ? "✓" : "✗"} ${r.message}`)
           .join("\n");
-        responseContent += `\n\n**Actions executed:**\n${actionSummary}`;
+        finalContent += `\n\n**Actions executed:**\n${actionSummary}`;
       }
 
       const assistantMessage: AIMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: responseContent,
+        content: finalContent,
         timestamp: new Date(),
       };
 
@@ -255,6 +293,7 @@ export const AIChatPanel = ({
       await saveChatHistory(updatedMessages);
     } finally {
       setIsLoading(false);
+      setStreamingContent("");
     }
   };
 
@@ -377,6 +416,8 @@ export const AIChatPanel = ({
 
   const getProviderIcon = () => {
     switch (selectedProvider) {
+      case "claude-code":
+        return <Terminal className="h-3.5 w-3.5" />;
       case "claude":
         return <Sparkles className="h-3.5 w-3.5" />;
       case "openai":
@@ -404,17 +445,27 @@ export const AIChatPanel = ({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {claudeCodeAvailable && (
+              <DropdownMenuItem onClick={() => setSelectedProvider("claude-code")}>
+                <Terminal className="mr-2 h-3.5 w-3.5" />
+                Claude Code
+                {selectedProvider === "claude-code" && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setSelectedProvider("claude")}>
               <Sparkles className="mr-2 h-3.5 w-3.5" />
-              Claude
+              Claude API
+              {selectedProvider === "claude" && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setSelectedProvider("openai")}>
               <Bot className="mr-2 h-3.5 w-3.5" />
               GPT-4
+              {selectedProvider === "openai" && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setSelectedProvider("gemini")}>
               <Gem className="mr-2 h-3.5 w-3.5" />
               Gemini
+              {selectedProvider === "gemini" && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -438,10 +489,18 @@ export const AIChatPanel = ({
           {isLoading && (
             <div className="flex items-start gap-1.5">
               <div className="flex h-5 w-5 items-center justify-center rounded bg-primary/20">
-                <Sparkles className="h-2.5 w-2.5 text-primary" />
+                {selectedProvider === "claude-code" ? (
+                  <Terminal className="h-2.5 w-2.5 text-primary" />
+                ) : (
+                  <Sparkles className="h-2.5 w-2.5 text-primary" />
+                )}
               </div>
               <div className="flex-1 rounded border border-border bg-background p-2">
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                {streamingContent ? (
+                  <p className="whitespace-pre-wrap break-words text-xs">{streamingContent}</p>
+                ) : (
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                )}
               </div>
             </div>
           )}

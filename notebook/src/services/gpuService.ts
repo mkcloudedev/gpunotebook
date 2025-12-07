@@ -62,7 +62,8 @@ interface GPUStatusResponse {
   processes: Array<{
     pid: number;
     name: string;
-    memory_mb: number;
+    memory_used_mb: number;
+    gpu_index: number;
   }>;
 }
 
@@ -76,20 +77,20 @@ interface GPUSystemResponse {
 class GPUService {
   private parseGPU(data: GPUStatusResponse, driverVersion: string, cudaVersion: string): GPUStatus {
     return {
-      index: data.index,
-      name: data.name,
-      uuid: data.uuid,
-      temperature: data.temperature_c,
-      utilizationGpu: data.utilization_percent,
+      index: data.index ?? 0,
+      name: data.name ?? "Unknown GPU",
+      uuid: data.uuid ?? "",
+      temperature: data.temperature_c ?? 0,
+      utilizationGpu: data.utilization_percent ?? 0,
       utilizationMemory: 0, // Not provided by backend
-      memoryUsed: data.memory_used_mb,
-      memoryTotal: data.memory_total_mb,
-      memoryFree: data.memory_free_mb,
-      powerDraw: data.power_draw_w,
-      powerLimit: data.power_limit_w,
+      memoryUsed: data.memory_used_mb ?? 0,
+      memoryTotal: data.memory_total_mb ?? 1, // Avoid division by zero
+      memoryFree: data.memory_free_mb ?? 0,
+      powerDraw: data.power_draw_w ?? 0,
+      powerLimit: data.power_limit_w ?? 1, // Avoid division by zero
       fanSpeed: data.fan_speed,
-      cudaVersion: cudaVersion,
-      driverVersion: driverVersion,
+      cudaVersion: cudaVersion ?? "",
+      driverVersion: driverVersion ?? "",
     };
   }
 
@@ -112,8 +113,8 @@ class GPUService {
           allProcesses.push({
             pid: p.pid,
             name: p.name,
-            memoryMb: p.memory_mb,
-            gpuIndex: gpuIndex,
+            memoryMb: p.memory_used_mb || 0,
+            gpuIndex: p.gpu_index ?? gpuIndex,
           });
         });
       }

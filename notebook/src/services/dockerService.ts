@@ -1,0 +1,289 @@
+/**
+ * Docker service for container and image management.
+ */
+import { apiClient } from "./apiClient";
+
+// ==================== INTERFACES ====================
+
+export interface Container {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  state: string;
+  ports: string;
+  created: string;
+  size: string;
+}
+
+export interface ContainerState {
+  status: string;
+  running: boolean;
+  paused: boolean;
+  restarting: boolean;
+  started_at: string;
+  finished_at: string;
+  exit_code: number;
+}
+
+export interface ContainerDetail {
+  id: string;
+  name: string;
+  image: string;
+  created: string;
+  state: ContainerState;
+  ports: Record<string, Array<{ HostIp: string; HostPort: string }>>;
+  env: string[];
+  cmd: string[];
+  labels: Record<string, string>;
+  mounts: Array<{
+    Type: string;
+    Source: string;
+    Destination: string;
+    Mode: string;
+    RW: boolean;
+  }>;
+}
+
+export interface ContainerStats {
+  container_id: string;
+  name: string;
+  cpu_percent: string;
+  memory_usage: string;
+  memory_percent: string;
+  network_io: string;
+  block_io: string;
+  pids: string;
+}
+
+export interface Image {
+  id: string;
+  repository: string;
+  tag: string;
+  created: string;
+  size: string;
+}
+
+export interface DockerSystemInfo {
+  containers: number;
+  containers_running: number;
+  containers_paused: number;
+  containers_stopped: number;
+  images: number;
+  server_version: string;
+  storage_driver: string;
+  memory_total: number;
+  cpus: number;
+  os: string;
+  kernel_version: string;
+}
+
+export interface DockerSystemStatus {
+  disk_usage: Array<{
+    Type: string;
+    Size: string;
+    Reclaimable: string;
+    TotalCount: string;
+    Active: string;
+  }>;
+  info: DockerSystemInfo | null;
+}
+
+export interface RunContainerRequest {
+  image: string;
+  name?: string;
+  ports?: Record<string, string>;
+  env?: Record<string, string>;
+  volumes?: Record<string, string>;
+  restart_policy?: string;
+  command?: string;
+}
+
+export interface OperationResponse {
+  success: boolean;
+  message: string;
+}
+
+// ==================== SERVICE ====================
+
+class DockerService {
+  /**
+   * Check if Docker is available.
+   */
+  async getStatus(): Promise<{ available: boolean }> {
+    return apiClient.get("/api/docker/status");
+  }
+
+  /**
+   * Get Docker system information.
+   */
+  async getSystemInfo(): Promise<DockerSystemStatus> {
+    return apiClient.get("/api/docker/system");
+  }
+
+  // ==================== CONTAINERS ====================
+
+  /**
+   * List all containers.
+   */
+  async listContainers(all: boolean = true): Promise<Container[]> {
+    return apiClient.get(`/api/docker/containers?all=${all}`);
+  }
+
+  /**
+   * Get container details.
+   */
+  async getContainer(containerId: string): Promise<ContainerDetail> {
+    return apiClient.get(`/api/docker/containers/${containerId}`);
+  }
+
+  /**
+   * Get container stats.
+   */
+  async getContainerStats(containerId: string): Promise<ContainerStats> {
+    return apiClient.get(`/api/docker/containers/${containerId}/stats`);
+  }
+
+  /**
+   * Get container logs.
+   */
+  async getContainerLogs(
+    containerId: string,
+    tail: number = 100,
+    timestamps: boolean = false
+  ): Promise<{ logs: string }> {
+    return apiClient.get(
+      `/api/docker/containers/${containerId}/logs?tail=${tail}&timestamps=${timestamps}`
+    );
+  }
+
+  /**
+   * Start a container.
+   */
+  async startContainer(containerId: string): Promise<OperationResponse> {
+    return apiClient.post(`/api/docker/containers/${containerId}/start`, {});
+  }
+
+  /**
+   * Stop a container.
+   */
+  async stopContainer(
+    containerId: string,
+    timeout: number = 10
+  ): Promise<OperationResponse> {
+    return apiClient.post(
+      `/api/docker/containers/${containerId}/stop?timeout=${timeout}`,
+      {}
+    );
+  }
+
+  /**
+   * Restart a container.
+   */
+  async restartContainer(
+    containerId: string,
+    timeout: number = 10
+  ): Promise<OperationResponse> {
+    return apiClient.post(
+      `/api/docker/containers/${containerId}/restart?timeout=${timeout}`,
+      {}
+    );
+  }
+
+  /**
+   * Remove a container.
+   */
+  async removeContainer(
+    containerId: string,
+    force: boolean = false
+  ): Promise<OperationResponse> {
+    return apiClient.delete(
+      `/api/docker/containers/${containerId}?force=${force}`
+    );
+  }
+
+  /**
+   * Run a new container.
+   */
+  async runContainer(request: RunContainerRequest): Promise<OperationResponse> {
+    return apiClient.post("/api/docker/containers", request);
+  }
+
+  /**
+   * Execute command in container.
+   */
+  async execCommand(
+    containerId: string,
+    command: string,
+    workdir?: string
+  ): Promise<{ success: boolean; stdout: string; stderr: string }> {
+    return apiClient.post(`/api/docker/containers/${containerId}/exec`, {
+      command,
+      workdir,
+    });
+  }
+
+  // ==================== IMAGES ====================
+
+  /**
+   * List all images.
+   */
+  async listImages(): Promise<Image[]> {
+    return apiClient.get("/api/docker/images");
+  }
+
+  /**
+   * Pull an image.
+   */
+  async pullImage(imageName: string): Promise<OperationResponse> {
+    return apiClient.post(`/api/docker/images/pull?image=${encodeURIComponent(imageName)}`, {});
+  }
+
+  /**
+   * Remove an image.
+   */
+  async removeImage(
+    imageId: string,
+    force: boolean = false
+  ): Promise<OperationResponse> {
+    return apiClient.delete(`/api/docker/images/${imageId}?force=${force}`);
+  }
+
+  // ==================== POLLING ====================
+
+  /**
+   * Start polling for container stats.
+   */
+  startStatsPolling(
+    containerId: string,
+    callback: (stats: ContainerStats) => void,
+    interval: number = 2000
+  ): () => void {
+    let active = true;
+
+    const poll = async () => {
+      if (!active) return;
+
+      try {
+        const stats = await this.getContainerStats(containerId);
+        if (active) {
+          callback(stats);
+        }
+      } catch {
+        // Container might not be running
+      }
+
+      if (active) {
+        setTimeout(poll, interval);
+      }
+    };
+
+    poll();
+
+    return () => {
+      active = false;
+    };
+  }
+}
+
+export const dockerService = new DockerService();

@@ -5,6 +5,7 @@
 import { Cell, CellOutput } from "@/types/notebook";
 import { fileService } from "./fileService";
 import { pipService } from "./pipService";
+import { gpuService } from "./gpuService";
 
 export type AIToolType =
   // Cell operations
@@ -70,7 +71,9 @@ export type AIToolType =
   | "checkOutdatedPackages"
   // Logs
   | "getExecutionLogs"
-  | "clearExecutionLogs";
+  | "clearExecutionLogs"
+  // GPU
+  | "getGpuStatus";
 
 export interface AIAction {
   tool: AIToolType;
@@ -1502,6 +1505,61 @@ export async function processAction(
         };
       }
 
+      // ==================== GPU TOOLS ====================
+
+      case "getGpuStatus": {
+        try {
+          const status = await gpuService.getStatus();
+
+          const gpuSummary = status.gpus.map((gpu) => ({
+            index: gpu.index,
+            name: gpu.name,
+            temperature: gpu.temperature,
+            utilizationPercent: gpu.utilizationGpu,
+            memoryUsedMB: gpu.memoryUsed,
+            memoryTotalMB: gpu.memoryTotal,
+            memoryUsedGB: (gpu.memoryUsed / 1024).toFixed(1),
+            memoryTotalGB: (gpu.memoryTotal / 1024).toFixed(1),
+            memoryPercent: gpu.memoryTotal > 0
+              ? ((gpu.memoryUsed / gpu.memoryTotal) * 100).toFixed(1)
+              : "0",
+            powerDrawW: gpu.powerDraw,
+            powerLimitW: gpu.powerLimit,
+            driverVersion: gpu.driverVersion,
+            cudaVersion: gpu.cudaVersion,
+          }));
+
+          const processesSummary = status.processes.map((p) => ({
+            pid: p.pid,
+            name: p.name,
+            gpuIndex: p.gpuIndex,
+            memoryMB: p.memoryMb,
+          }));
+
+          return {
+            success: true,
+            tool,
+            message: `Found ${status.gpuCount} GPU(s)`,
+            data: {
+              gpuCount: status.gpuCount,
+              hasGpu: status.hasGpu,
+              cudaAvailable: status.cudaAvailable,
+              totalMemoryUsedMB: status.totalMemoryUsed,
+              totalMemoryTotalMB: status.totalMemoryTotal,
+              averageUtilization: status.averageUtilization.toFixed(1),
+              gpus: gpuSummary,
+              processes: processesSummary,
+            },
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to get GPU status: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -1661,6 +1719,15 @@ VARIABLES (from getVariables tool):
 EXECUTION LOGS:
 - getExecutionLogs { "limit": 50, "type": "error" } - Get execution logs (types: stdout, stderr, error, info, success, warning)
 - clearExecutionLogs {} - Clear all execution logs
+
+GPU MONITORING:
+- getGpuStatus {} - Get full GPU status including:
+  - GPU count, names, temperatures
+  - Utilization percentage for each GPU
+  - VRAM usage (used/total in MB and GB)
+  - Power draw and limits
+  - CUDA/driver versions
+  - Running processes with memory usage per GPU
 
 To use tools, include JSON in your response:
 \`\`\`json

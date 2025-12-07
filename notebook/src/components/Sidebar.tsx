@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Home, Sparkles, Settings as SettingsIcon, FileText, LayoutDashboard, ChevronRight, ExternalLink, Key, FileCode, MessageSquare, Brain, Cpu, FolderOpen, Database, Server, HelpCircle } from "lucide-react";
+import { Sparkles, Settings as SettingsIcon, ChevronRight, ExternalLink, FileCode, MessageSquare, Brain, Cpu, FolderOpen, Database, Server, Box, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -89,8 +89,7 @@ export const Sidebar = ({ activePage }: SidebarProps) => {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-2">
-        <NavItem icon={<Home className="h-4 w-4" />} label="Home" to="/" active={currentPage === "home"} collapsed={collapsed} />
-        <NavItem icon={<FileCode className="h-4 w-4" />} label="Notebooks" to="/notebooks" active={currentPage === "notebooks"} collapsed={collapsed} />
+        <NavItem icon={<FileCode className="h-4 w-4" />} label="Notebooks" to="/" active={currentPage === "home" || currentPage === "notebooks"} collapsed={collapsed} />
         <NavItem icon={<Sparkles className="h-4 w-4" />} label="Playground" to="/playground" active={currentPage === "playground"} collapsed={collapsed} />
         <NavItem icon={<MessageSquare className="h-4 w-4" />} label="AI Assistant" to="/ai-assistant" active={currentPage === "ai-assistant"} collapsed={collapsed} />
         <NavItem icon={<Brain className="h-4 w-4" />} label="AutoML" to="/automl" active={currentPage === "automl"} collapsed={collapsed} />
@@ -98,6 +97,7 @@ export const Sidebar = ({ activePage }: SidebarProps) => {
         <NavItem icon={<FolderOpen className="h-4 w-4" />} label="Files" to="/files" active={currentPage === "files"} collapsed={collapsed} />
         <NavItem icon={<Database className="h-4 w-4" />} label="Kaggle" to="/kaggle" active={currentPage === "kaggle"} collapsed={collapsed} />
         <NavItem icon={<Server className="h-4 w-4" />} label="Cluster" to="/cluster" active={currentPage === "cluster"} collapsed={collapsed} />
+        <NavItem icon={<Box className="h-4 w-4" />} label="Containers" to="/containers" active={currentPage === "containers"} collapsed={collapsed} />
       </nav>
 
       {/* Footer */}

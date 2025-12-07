@@ -13,6 +13,7 @@ from .automl import router as automl_router
 from .datasets import router as datasets_router
 from .cluster import router as cluster_router
 from .packages import router as packages_router
+from .docker import router as docker_router
 
 # Versioned API router
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -27,6 +28,7 @@ api_v1_router.include_router(settings_router, prefix="/settings", tags=["setting
 api_v1_router.include_router(automl_router, prefix="/automl", tags=["automl"])
 api_v1_router.include_router(datasets_router, prefix="/datasets", tags=["datasets"])
 api_v1_router.include_router(cluster_router, prefix="/cluster", tags=["cluster"])
+api_v1_router.include_router(docker_router, prefix="/docker", tags=["docker"])
 
 # Legacy API router (for backwards compatibility)
 legacy_api_router = APIRouter(prefix="/api")
@@ -43,3 +45,4 @@ legacy_api_router.include_router(automl_router, prefix="/automl", tags=["automl"
 legacy_api_router.include_router(datasets_router, prefix="/datasets", tags=["datasets"])
 legacy_api_router.include_router(cluster_router, prefix="/cluster", tags=["cluster"])
 legacy_api_router.include_router(packages_router, prefix="/packages", tags=["packages"])
+legacy_api_router.include_router(docker_router, prefix="/docker", tags=["docker"])

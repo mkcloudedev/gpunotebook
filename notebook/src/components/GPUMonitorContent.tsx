@@ -1,164 +1,62 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Thermometer,
   Activity,
   HardDrive,
   Zap,
-  RefreshCw,
-  Settings,
   Cpu,
   AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { GPUMonitorBreadcrumb } from "./GPUMonitorBreadcrumb";
-import { gpuService, GPUStatus, GPUProcess, GPUSystemStatus } from "@/services/gpuService";
+import { GPUStatus } from "@/services/gpuService";
+import { useGPU } from "@/contexts/GPUContext";
 
 // History length (30 data points = 60 seconds at 2s interval)
 const HISTORY_LENGTH = 30;
-const POLL_INTERVAL = 2000;
-
-// Mock data for fallback
-const mockGpuStatus: GPUStatus = {
-  index: 0,
-  name: "NVIDIA GeForce RTX 4090",
-  uuid: "mock-uuid",
-  temperature: 65,
-  utilizationGpu: 78,
-  utilizationMemory: 45,
-  memoryUsed: 18432,
-  memoryTotal: 24576,
-  memoryFree: 6144,
-  powerDraw: 320,
-  powerLimit: 450,
-  cudaVersion: "12.1",
-  driverVersion: "535.104.05",
-};
-
-const mockProcesses: GPUProcess[] = [
-  { pid: 12345, name: "python3", memoryMb: 8192, gpuIndex: 0 },
-  { pid: 12346, name: "jupyter-lab", memoryMb: 4096, gpuIndex: 0 },
-  { pid: 12347, name: "torch-distributed", memoryMb: 6144, gpuIndex: 0 },
-];
 
 export const GPUMonitorContent = () => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [hasGpu, setHasGpu] = useState(true);
-  const [gpuStatus, setGpuStatus] = useState<GPUStatus | null>(null);
-  const [processes, setProcesses] = useState<GPUProcess[]>([]);
+  const { gpus: allGpus, processes, isLoading, error, hasGpu, refresh } = useGPU();
+  const [selectedGpuIndex, setSelectedGpuIndex] = useState(0);
   const [utilizationHistory, setUtilizationHistory] = useState<number[]>([]);
   const [memoryHistory, setMemoryHistory] = useState<number[]>([]);
   const [temperatureHistory, setTemperatureHistory] = useState<number[]>([]);
+  const prevGpusRef = useRef<GPUStatus[]>([]);
 
-  const stopPollingRef = useRef<(() => void) | null>(null);
+  // Get currently selected GPU
+  const gpuStatus = allGpus[selectedGpuIndex] || null;
 
-  // Update history with new data point
-  const updateHistory = useCallback((status: GPUStatus) => {
-    const memoryPercent = status.memoryTotal > 0
-      ? (status.memoryUsed / status.memoryTotal) * 100
-      : 0;
-
-    setUtilizationHistory((prev) => {
-      const next = [...prev, status.utilizationGpu];
-      return next.slice(-HISTORY_LENGTH);
-    });
-    setMemoryHistory((prev) => {
-      const next = [...prev, memoryPercent];
-      return next.slice(-HISTORY_LENGTH);
-    });
-    setTemperatureHistory((prev) => {
-      const next = [...prev, status.temperature];
-      return next.slice(-HISTORY_LENGTH);
-    });
-  }, []);
-
-  // Handle status update from polling
-  const handleStatusUpdate = useCallback((systemStatus: GPUSystemStatus) => {
-    setHasGpu(systemStatus.hasGpu);
-    setProcesses(systemStatus.processes);
-
-    if (systemStatus.primaryGpu) {
-      setGpuStatus(systemStatus.primaryGpu);
-      updateHistory(systemStatus.primaryGpu);
-    }
-
-    setIsLoading(false);
-    setError(null);
-  }, [updateHistory]);
-
-  // Initial load and start polling
+  // Update history when GPU data changes
   useEffect(() => {
-    const startPolling = async () => {
-      try {
-        // Initial load
-        const status = await gpuService.getStatus();
-        handleStatusUpdate(status);
+    // Only update if gpus actually changed (new data from polling)
+    if (allGpus.length > 0 && allGpus !== prevGpusRef.current) {
+      const selectedGpu = allGpus[selectedGpuIndex];
+      if (selectedGpu) {
+        const memoryPercent = selectedGpu.memoryTotal > 0
+          ? (selectedGpu.memoryUsed / selectedGpu.memoryTotal) * 100
+          : 0;
 
-        // Load history if available
-        try {
-          const history = await gpuService.getHistory(0, "1h");
-          if (history.length > 0) {
-            setUtilizationHistory(history.slice(-HISTORY_LENGTH).map((h) => h.utilizationGpu));
-            setMemoryHistory(history.slice(-HISTORY_LENGTH).map((h) => {
-              const total = status.primaryGpu?.memoryTotal || 1;
-              return (h.memoryUsed / total) * 100;
-            }));
-            setTemperatureHistory(history.slice(-HISTORY_LENGTH).map((h) => h.temperature));
-          }
-        } catch (e) {
-          // History not available, that's okay
-          console.log("GPU history not available, using real-time data");
-        }
-
-        // Start real-time polling
-        stopPollingRef.current = gpuService.startPolling(handleStatusUpdate, POLL_INTERVAL);
-      } catch (err) {
-        console.error("Error loading GPU status:", err);
-        setError(err instanceof Error ? err.message : "Failed to load GPU status");
-        // Use mock data as fallback
-        setGpuStatus(mockGpuStatus);
-        setProcesses(mockProcesses);
-        setHasGpu(true);
-        setIsLoading(false);
-
-        // Start simulated updates as fallback
-        const interval = setInterval(() => {
-          setGpuStatus((prev) => prev ? {
-            ...prev,
-            temperature: Math.floor(Math.random() * 15 + 60),
-            utilizationGpu: Math.floor(Math.random() * 30 + 60),
-            powerDraw: Math.floor(Math.random() * 100 + 280),
-          } : prev);
-          setUtilizationHistory((prev) => [...prev.slice(1), Math.random() * 40 + 50]);
-          setMemoryHistory((prev) => [...prev.slice(1), Math.random() * 20 + 60]);
-          setTemperatureHistory((prev) => [...prev.slice(1), Math.random() * 15 + 55]);
-        }, POLL_INTERVAL);
-
-        stopPollingRef.current = () => clearInterval(interval);
+        setUtilizationHistory((prev) => {
+          const next = [...prev, selectedGpu.utilizationGpu];
+          return next.slice(-HISTORY_LENGTH);
+        });
+        setMemoryHistory((prev) => {
+          const next = [...prev, memoryPercent];
+          return next.slice(-HISTORY_LENGTH);
+        });
+        setTemperatureHistory((prev) => {
+          const next = [...prev, selectedGpu.temperature];
+          return next.slice(-HISTORY_LENGTH);
+        });
       }
-    };
-
-    startPolling();
-
-    return () => {
-      if (stopPollingRef.current) {
-        stopPollingRef.current();
-      }
-    };
-  }, [handleStatusUpdate]);
-
-  const handleRefresh = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const status = await gpuService.getStatus();
-      handleStatusUpdate(status);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to refresh");
-      setIsLoading(false);
+      prevGpusRef.current = allGpus;
     }
-  }, [handleStatusUpdate]);
+  }, [allGpus, selectedGpuIndex]);
+
+  const handleRefresh = () => {
+    refresh();
+  };
 
   if (isLoading) {
     return (
@@ -200,7 +98,14 @@ export const GPUMonitorContent = () => {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <GPUMonitorBreadcrumb
-        gpuName={gpuStatus.name}
+        gpus={allGpus}
+        selectedIndex={selectedGpuIndex}
+        onSelectGpu={(index) => {
+          setSelectedGpuIndex(index);
+          setUtilizationHistory([]);
+          setMemoryHistory([]);
+          setTemperatureHistory([]);
+        }}
         onRefresh={handleRefresh}
       />
 
@@ -222,10 +127,10 @@ export const GPUMonitorContent = () => {
             />
             <SpeedometerGauge
               title="VRAM Usage"
-              value={gpuStatus.memoryUsed / 1024}
-              maxValue={gpuStatus.memoryTotal / 1024}
+              value={(gpuStatus.memoryUsed || 0) / 1024}
+              maxValue={(gpuStatus.memoryTotal || 1) / 1024}
               unit="GB"
-              subtitle={`of ${(gpuStatus.memoryTotal / 1024).toFixed(0)} GB`}
+              subtitle={`of ${((gpuStatus.memoryTotal || 0) / 1024).toFixed(0)} GB`}
               color="#10B981"
               warningThreshold={70}
               dangerThreshold={90}
@@ -287,14 +192,43 @@ export const GPUMonitorContent = () => {
         {/* Processes Panel */}
         <div className="w-72 border-l border-border bg-card flex flex-col">
           <div className="flex items-center justify-between border-b border-border p-3">
-            <span className="font-semibold text-sm">GPU Processes</span>
-            <span className="text-xs text-muted-foreground">{processes.length} active</span>
+            <span className="font-semibold text-sm">All GPU Processes</span>
+            <span className="text-xs text-muted-foreground">
+              {processes.length} active
+            </span>
           </div>
 
-          <div className="flex-1 overflow-auto p-3 space-y-2">
-            {processes.map((process) => (
-              <ProcessRow key={process.pid} process={process} />
-            ))}
+          <div className="flex-1 overflow-auto p-2 space-y-1">
+            {allGpus.map((gpu, gpuIdx) => {
+              const gpuProcesses = processes.filter(p => p.gpuIndex === gpuIdx);
+              return (
+                <div key={gpu.uuid || gpuIdx}>
+                  {/* GPU Header */}
+                  <div className="flex items-center gap-2 px-2 py-1.5 bg-muted/50 rounded-md mb-1">
+                    <Cpu className="h-3 w-3 text-primary" />
+                    <span className="text-xs font-semibold">GPU {gpuIdx}</span>
+                    <span className="text-[10px] text-muted-foreground truncate flex-1">
+                      {gpu.name.replace("NVIDIA ", "").replace("GeForce ", "")}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {gpuProcesses.length}
+                    </span>
+                  </div>
+                  {/* GPU Processes */}
+                  <div className="space-y-1 mb-2">
+                    {gpuProcesses.length > 0 ? (
+                      gpuProcesses.map((process, index) => (
+                        <ProcessRow key={`${process.pid}-${gpuIdx}-${index}`} process={process} />
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground px-2 py-1">
+                        No processes
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="border-t border-border p-3">
@@ -352,7 +286,9 @@ const SpeedometerGauge = ({
   dangerThreshold = 90,
   icon,
 }: SpeedometerGaugeProps) => {
-  const percent = Math.min((value / maxValue) * 100, 100);
+  const safeValue = isNaN(value) ? 0 : value;
+  const safeMaxValue = isNaN(maxValue) || maxValue === 0 ? 1 : maxValue;
+  const percent = Math.min((safeValue / safeMaxValue) * 100, 100);
   const angle = (percent / 100) * 270 - 135; // -135 to 135 degrees
 
   // Determine color based on thresholds
@@ -539,7 +475,7 @@ const SpeedometerGauge = ({
         {/* Center value display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <div className="text-2xl font-bold tracking-tight" style={{ color: currentColor }}>
-            {value.toFixed(0)}
+            {safeValue.toFixed(0)}
           </div>
           <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{unit}</div>
         </div>

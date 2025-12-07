@@ -40,22 +40,16 @@ class ClaudeCodeService:
         self.default_model = os.environ.get("CLAUDE_CODE_MODEL", "claude-sonnet-4-20250514")
         self.max_output_tokens = os.environ.get("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "32000")
         self.timeout = 600  # 10 minutes
+        # Cache for availability check
+        self._available: Optional[bool] = None
+        self._version: Optional[str] = None
+        self._cache_checked = False
 
     async def check_available(self) -> bool:
-        """Check if Claude Code CLI is available."""
-        try:
-            process = await asyncio.create_subprocess_exec(
-                self.claude_path, "--version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await process.wait()
-            return process.returncode == 0
-        except Exception:
-            return False
+        """Check if Claude Code CLI is available (cached)."""
+        if self._cache_checked:
+            return self._available or False
 
-    async def get_version(self) -> Optional[str]:
-        """Get Claude Code CLI version."""
         try:
             process = await asyncio.create_subprocess_exec(
                 self.claude_path, "--version",
@@ -63,9 +57,21 @@ class ClaudeCodeService:
                 stderr=asyncio.subprocess.PIPE
             )
             stdout, _ = await process.communicate()
-            return stdout.decode().strip()
+            self._available = process.returncode == 0
+            if self._available:
+                self._version = stdout.decode().strip()
+            self._cache_checked = True
+            return self._available
         except Exception:
-            return None
+            self._available = False
+            self._cache_checked = True
+            return False
+
+    async def get_version(self) -> Optional[str]:
+        """Get Claude Code CLI version (cached)."""
+        if not self._cache_checked:
+            await self.check_available()
+        return self._version
 
     def _build_system_prompt(self, notebook_context: Optional[Dict] = None) -> str:
         """Build the system prompt for Claude Code."""

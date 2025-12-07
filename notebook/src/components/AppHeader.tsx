@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Activity, ChevronDown, HelpCircle, Check } from "lucide-react";
+import { Activity, ChevronDown, HelpCircle, Check, Cpu, Thermometer, HardDrive } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -7,7 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { gpuService } from "@/services/gpuService";
+import { GPUStatus } from "@/services/gpuService";
+import { useGPU } from "@/contexts/GPUContext";
 
 interface Kernel {
   id: string;
@@ -18,36 +19,15 @@ interface Kernel {
 interface AppHeaderProps {
   title?: string;
   actions?: React.ReactNode;
+  hideGpuStatus?: boolean;
 }
 
-export const AppHeader = ({ title, actions }: AppHeaderProps) => {
-  const [gpuName, setGpuName] = useState("GPU");
-  const [gpuAvailable, setGpuAvailable] = useState(false);
+export const AppHeader = ({ title, actions, hideGpuStatus = false }: AppHeaderProps) => {
+  const { gpus, hasGpu: gpuAvailable } = useGPU();
   const [kernels, setKernels] = useState<Kernel[]>([]);
   const [selectedKernel, setSelectedKernel] = useState<Kernel | null>(null);
 
   useEffect(() => {
-    // Load GPU status from backend
-    const loadGpuStatus = async () => {
-      try {
-        const status = await gpuService.getStatus();
-        if (status.primaryGpu) {
-          setGpuName(status.primaryGpu.name);
-          setGpuAvailable(true);
-        } else if (status.gpus.length > 0) {
-          setGpuName(status.gpus[0].name);
-          setGpuAvailable(true);
-        } else {
-          setGpuName("No GPU");
-          setGpuAvailable(false);
-        }
-      } catch (error) {
-        console.error("Failed to load GPU status:", error);
-        setGpuName("GPU Unavailable");
-        setGpuAvailable(false);
-      }
-    };
-
     // Simulated kernels load
     const loadKernels = async () => {
       // TODO: Replace with actual API call
@@ -62,7 +42,6 @@ export const AppHeader = ({ title, actions }: AppHeaderProps) => {
       }
     };
 
-    loadGpuStatus();
     loadKernels();
   }, []);
 
@@ -91,10 +70,24 @@ export const AppHeader = ({ title, actions }: AppHeaderProps) => {
 
       <div className="flex-1" />
 
-      {/* GPU Status */}
-      <GPUStatus name={gpuName} available={gpuAvailable} />
-
-      <div className="w-4" />
+      {/* GPU Status - Show all GPUs (hidden on GPU Monitor page) */}
+      {!hideGpuStatus && (
+        <>
+          <div className="flex items-center gap-1.5">
+            {gpuAvailable ? (
+              gpus.map((gpu) => (
+                <GPUStatusBadge key={gpu.index} gpu={gpu} />
+              ))
+            ) : (
+              <div className="flex items-center gap-1.5 rounded-md border border-muted-foreground/30 bg-muted px-2.5 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">No GPU</span>
+              </div>
+            )}
+          </div>
+          <div className="w-4" />
+        </>
+      )}
 
       {/* Kernel Selector */}
       {kernels.length === 0 ? (
@@ -155,35 +148,54 @@ export const AppHeader = ({ title, actions }: AppHeaderProps) => {
   );
 };
 
-interface GPUStatusProps {
-  name: string;
-  available: boolean;
+interface GPUStatusBadgeProps {
+  gpu: GPUStatus;
 }
 
-const GPUStatus = ({ name, available }: GPUStatusProps) => {
+const GPUStatusBadge = ({ gpu }: GPUStatusBadgeProps) => {
+  const getStatusColor = (value: number, warning: number, danger: number) => {
+    if (value >= danger) return "text-red-500";
+    if (value >= warning) return "text-yellow-500";
+    return "text-green-500";
+  };
+
+  const memPercent = gpu.memoryTotal > 0
+    ? (gpu.memoryUsed / gpu.memoryTotal) * 100
+    : 0;
+
   return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border px-2.5 py-1",
-        available
-          ? "border-success/30 bg-success/10"
-          : "border-muted-foreground/30 bg-muted"
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          available ? "bg-success" : "bg-muted-foreground"
-        )}
-      />
-      <span
-        className={cn(
-          "text-xs font-medium",
-          available ? "text-success" : "text-muted-foreground"
-        )}
-      >
-        {available ? name : "No GPU"}
-      </span>
+    <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1">
+      {/* GPU Index */}
+      <div className="flex items-center gap-1">
+        <Cpu className="h-3 w-3 text-primary" />
+        <span className="text-xs font-medium">{gpu.index}</span>
+      </div>
+
+      <div className="h-3 w-px bg-border" />
+
+      {/* Utilization */}
+      <div className="flex items-center gap-0.5" title="GPU Utilization">
+        <Activity className={cn("h-3 w-3", getStatusColor(gpu.utilizationGpu, 70, 90))} />
+        <span className={cn("text-xs", getStatusColor(gpu.utilizationGpu, 70, 90))}>
+          {gpu.utilizationGpu}%
+        </span>
+      </div>
+
+      {/* Temperature */}
+      <div className="flex items-center gap-0.5" title="Temperature">
+        <Thermometer className={cn("h-3 w-3", getStatusColor(gpu.temperature, 70, 85))} />
+        <span className={cn("text-xs", getStatusColor(gpu.temperature, 70, 85))}>
+          {gpu.temperature}°
+        </span>
+      </div>
+
+      {/* Memory */}
+      <div className="flex items-center gap-0.5" title="VRAM Usage">
+        <HardDrive className={cn("h-3 w-3", getStatusColor(memPercent, 70, 90))} />
+        <span className={cn("text-xs", getStatusColor(memPercent, 70, 90))}>
+          {((gpu.memoryUsed || 0) / 1024).toFixed(0)}G
+        </span>
+      </div>
     </div>
   );
 };
