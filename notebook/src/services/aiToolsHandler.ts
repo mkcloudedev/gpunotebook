@@ -6,6 +6,7 @@ import { Cell, CellOutput } from "@/types/notebook";
 import { fileService } from "./fileService";
 import { pipService } from "./pipService";
 import { gpuService } from "./gpuService";
+import { dockerService } from "./dockerService";
 
 export type AIToolType =
   // Cell operations
@@ -73,7 +74,16 @@ export type AIToolType =
   | "getExecutionLogs"
   | "clearExecutionLogs"
   // GPU
-  | "getGpuStatus";
+  | "getGpuStatus"
+  // Container notebooks
+  | "createContainer"
+  | "listContainers"
+  | "executeInContainer"
+  | "stopContainer"
+  | "removeContainer"
+  | "installContainerPackage"
+  | "listContainerPackages"
+  | "quickExecuteInContainer";
 
 export interface AIAction {
   tool: AIToolType;
@@ -1560,6 +1570,259 @@ export async function processAction(
         }
       }
 
+      // ==================== CONTAINER NOTEBOOK TOOLS ====================
+
+      case "createContainer": {
+        try {
+          const name = params.name as string | undefined;
+          const image = (params.image as string) || "python";
+          const gpu = (params.gpu as boolean) || false;
+          const memoryLimit = (params.memory_limit as string) || "2g";
+
+          const container = await dockerService.createNotebookContainer({
+            name,
+            image,
+            gpu,
+            memory_limit: memoryLimit,
+          });
+
+          return {
+            success: true,
+            tool,
+            message: `Created container "${container.name}" (${container.container_id})`,
+            data: container,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to create container: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "listContainers": {
+        try {
+          const containers = await dockerService.listNotebookContainers();
+          return {
+            success: true,
+            tool,
+            message: `Found ${containers.length} notebook container(s)`,
+            data: containers.map(c => ({
+              id: c.container_id,
+              name: c.name,
+              image: c.image,
+              status: c.status,
+              executionCount: c.execution_count,
+            })),
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to list containers: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "executeInContainer": {
+        try {
+          const containerId = (params.container_id || params.containerId) as string;
+          const code = (params.code || params.source) as string;
+          const timeout = (params.timeout as number) || 300;
+
+          if (!containerId || !code) {
+            return {
+              success: false,
+              tool,
+              message: "container_id and code are required",
+            };
+          }
+
+          const result = await dockerService.executeInContainer(containerId, code, timeout);
+
+          // Format outputs for readability
+          const outputText = result.outputs
+            .map(o => {
+              if (o.output_type === "stream" && o.text) return o.text;
+              if (o.output_type === "error") return `Error: ${o.ename}: ${o.evalue}`;
+              return "";
+            })
+            .filter(Boolean)
+            .join("");
+
+          return {
+            success: result.status === "success",
+            tool,
+            message: result.status === "success"
+              ? `Executed in ${result.duration_ms}ms`
+              : `Execution failed: ${result.error}`,
+            data: {
+              execution_id: result.execution_id,
+              status: result.status,
+              duration_ms: result.duration_ms,
+              output: outputText,
+              outputs: result.outputs,
+            },
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to execute: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "stopContainer": {
+        try {
+          const containerId = (params.container_id || params.containerId) as string;
+          if (!containerId) {
+            return { success: false, tool, message: "container_id is required" };
+          }
+
+          await dockerService.stopNotebookContainer(containerId);
+          return {
+            success: true,
+            tool,
+            message: `Container ${containerId} stopped`,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to stop container: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "removeContainer": {
+        try {
+          const containerId = (params.container_id || params.containerId) as string;
+          const force = (params.force as boolean) || false;
+
+          if (!containerId) {
+            return { success: false, tool, message: "container_id is required" };
+          }
+
+          await dockerService.removeNotebookContainer(containerId, force);
+          return {
+            success: true,
+            tool,
+            message: `Container ${containerId} removed`,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to remove container: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "installContainerPackage": {
+        try {
+          const containerId = (params.container_id || params.containerId) as string;
+          const packageName = (params.package || params.packageName) as string;
+          const upgrade = (params.upgrade as boolean) || false;
+
+          if (!containerId || !packageName) {
+            return { success: false, tool, message: "container_id and package are required" };
+          }
+
+          const result = await dockerService.installContainerPackage(containerId, packageName, upgrade);
+          return {
+            success: result.success,
+            tool,
+            message: result.success
+              ? `Installed ${packageName} in container`
+              : `Failed to install: ${result.output}`,
+            data: result,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to install package: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "listContainerPackages": {
+        try {
+          const containerId = (params.container_id || params.containerId) as string;
+          if (!containerId) {
+            return { success: false, tool, message: "container_id is required" };
+          }
+
+          const result = await dockerService.listContainerPackages(containerId);
+          return {
+            success: true,
+            tool,
+            message: `Found ${result.packages.length} packages`,
+            data: result.packages,
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to list packages: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
+      case "quickExecuteInContainer": {
+        try {
+          const code = (params.code || params.source) as string;
+          const image = (params.image as string) || "python";
+          const packages = params.packages as string[] | undefined;
+          const timeout = (params.timeout as number) || 300;
+          const cleanup = params.cleanup !== false; // Default true
+
+          if (!code) {
+            return { success: false, tool, message: "code is required" };
+          }
+
+          const result = await dockerService.quickExecuteInContainer({
+            code,
+            image,
+            packages,
+            timeout,
+            cleanup,
+          });
+
+          const outputText = result.outputs
+            .map(o => {
+              if (o.output_type === "stream" && o.text) return o.text;
+              if (o.output_type === "error") return `Error: ${o.ename}: ${o.evalue}`;
+              return "";
+            })
+            .filter(Boolean)
+            .join("");
+
+          return {
+            success: result.status === "success",
+            tool,
+            message: result.status === "success"
+              ? `Quick execution completed in ${result.duration_ms}ms${result.cleaned_up ? " (container cleaned up)" : ""}`
+              : `Execution failed: ${result.error}`,
+            data: {
+              execution_id: result.execution_id,
+              status: result.status,
+              duration_ms: result.duration_ms,
+              output: outputText,
+              cleaned_up: result.cleaned_up,
+            },
+          };
+        } catch (error) {
+          return {
+            success: false,
+            tool,
+            message: `Failed to execute: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
+      }
+
       default:
         return {
           success: false,
@@ -1728,6 +1991,19 @@ GPU MONITORING:
   - Power draw and limits
   - CUDA/driver versions
   - Running processes with memory usage per GPU
+
+CONTAINER NOTEBOOKS (Docker-based isolated execution):
+- createContainer { "name": "my-env", "image": "python", "gpu": false, "memory_limit": "2g" }
+  Images: python (slim), python-ml (numpy/pandas/scipy), datascience, tensorflow, pytorch, python-gpu (CUDA)
+- listContainers {} - List all notebook containers with status
+- executeInContainer { "container_id": "abc123", "code": "print('hello')", "timeout": 300 }
+  Execute Python code in isolated container, returns output
+- stopContainer { "container_id": "abc123" }
+- removeContainer { "container_id": "abc123", "force": false }
+- installContainerPackage { "container_id": "abc123", "package": "requests", "upgrade": false }
+- listContainerPackages { "container_id": "abc123" }
+- quickExecuteInContainer { "code": "print('test')", "image": "python", "packages": ["requests"], "cleanup": true }
+  Creates ephemeral container, runs code, optionally cleans up. Great for one-off isolated execution.
 
 To use tools, include JSON in your response:
 \`\`\`json

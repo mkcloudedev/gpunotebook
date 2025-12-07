@@ -99,6 +99,52 @@ export interface RunContainerRequest {
   command?: string;
 }
 
+// ==================== CONTAINER NOTEBOOK INTERFACES ====================
+
+export interface NotebookContainer {
+  container_id: string;
+  name: string;
+  image: string;
+  status: string;
+  created_at: string;
+  kernel_type: string;
+  workspace_path?: string;
+  execution_count: number;
+}
+
+export interface ContainerExecutionResult {
+  execution_id: string;
+  container_id: string;
+  status: string;
+  outputs: Array<{
+    output_type: string;
+    name?: string;
+    text?: string;
+    ename?: string;
+    evalue?: string;
+    traceback?: string[];
+  }>;
+  error?: string;
+  duration_ms: number;
+}
+
+export interface CreateNotebookContainerRequest {
+  name?: string;
+  image?: string;
+  environment?: Record<string, string>;
+  gpu?: boolean;
+  memory_limit?: string;
+  cpu_limit?: number;
+}
+
+export interface QuickExecuteRequest {
+  code: string;
+  image?: string;
+  packages?: string[];
+  timeout?: number;
+  cleanup?: boolean;
+}
+
 export interface OperationResponse {
   success: boolean;
   message: string;
@@ -283,6 +329,98 @@ class DockerService {
     return () => {
       active = false;
     };
+  }
+
+  // ==================== CONTAINER NOTEBOOKS ====================
+
+  /**
+   * Get available notebook container images.
+   */
+  async getNotebookImages(): Promise<{ images: Array<{ id: string; name: string; description: string }> }> {
+    return apiClient.get("/api/container-notebooks/images");
+  }
+
+  /**
+   * Create a new notebook container.
+   */
+  async createNotebookContainer(request: CreateNotebookContainerRequest): Promise<NotebookContainer> {
+    return apiClient.post("/api/container-notebooks/containers", request);
+  }
+
+  /**
+   * List all notebook containers.
+   */
+  async listNotebookContainers(): Promise<NotebookContainer[]> {
+    return apiClient.get("/api/container-notebooks/containers");
+  }
+
+  /**
+   * Get a specific notebook container.
+   */
+  async getNotebookContainer(containerId: string): Promise<NotebookContainer> {
+    return apiClient.get(`/api/container-notebooks/containers/${containerId}`);
+  }
+
+  /**
+   * Execute code in a notebook container.
+   */
+  async executeInContainer(containerId: string, code: string, timeout: number = 300): Promise<ContainerExecutionResult> {
+    return apiClient.post(`/api/container-notebooks/containers/${containerId}/execute`, {
+      code,
+      timeout,
+    });
+  }
+
+  /**
+   * Start a notebook container.
+   */
+  async startNotebookContainer(containerId: string): Promise<OperationResponse> {
+    return apiClient.post(`/api/container-notebooks/containers/${containerId}/start`, {});
+  }
+
+  /**
+   * Stop a notebook container.
+   */
+  async stopNotebookContainer(containerId: string): Promise<OperationResponse> {
+    return apiClient.post(`/api/container-notebooks/containers/${containerId}/stop`, {});
+  }
+
+  /**
+   * Remove a notebook container.
+   */
+  async removeNotebookContainer(containerId: string, force: boolean = false): Promise<OperationResponse> {
+    return apiClient.delete(`/api/container-notebooks/containers/${containerId}?force=${force}`);
+  }
+
+  /**
+   * Install a package in a notebook container.
+   */
+  async installContainerPackage(containerId: string, packageName: string, upgrade: boolean = false): Promise<{ success: boolean; package: string; output: string }> {
+    return apiClient.post(`/api/container-notebooks/containers/${containerId}/packages/install`, {
+      package: packageName,
+      upgrade,
+    });
+  }
+
+  /**
+   * List packages in a notebook container.
+   */
+  async listContainerPackages(containerId: string): Promise<{ packages: Array<{ name: string; version: string }> }> {
+    return apiClient.get(`/api/container-notebooks/containers/${containerId}/packages`);
+  }
+
+  /**
+   * Quick execute code in an ephemeral container.
+   */
+  async quickExecuteInContainer(request: QuickExecuteRequest): Promise<ContainerExecutionResult & { cleaned_up?: boolean }> {
+    return apiClient.post("/api/container-notebooks/quick-execute", request);
+  }
+
+  /**
+   * List files in a container.
+   */
+  async listContainerFiles(containerId: string, path: string = "/workspace"): Promise<{ path: string; files: Array<{ name: string; size: number; is_directory: boolean }> }> {
+    return apiClient.get(`/api/container-notebooks/containers/${containerId}/files?path=${encodeURIComponent(path)}`);
   }
 }
 
