@@ -113,14 +113,14 @@ class PipService {
 
   // List installed packages
   async listPackages(): Promise<InstalledPackage[]> {
-    const response = await apiClient.get<PackageResponse[]>("/api/pip/packages");
+    const response = await apiClient.get<PackageResponse[]>("/api/packages");
     return response.map((p) => this.parsePackage(p));
   }
 
   // Get package info
   async getPackageInfo(name: string): Promise<PackageInfo> {
     const response = await apiClient.get<PackageInfoResponse>(
-      `/api/pip/packages/${encodeURIComponent(name)}`
+      `/api/packages/${encodeURIComponent(name)}`
     );
     return this.parsePackageInfo(response);
   }
@@ -128,7 +128,7 @@ class PipService {
   // Search packages on PyPI
   async searchPackages(query: string, limit: number = 20): Promise<PackageSearchResult[]> {
     const response = await apiClient.get<PackageSearchResult[]>(
-      `/api/pip/search?query=${encodeURIComponent(query)}&limit=${limit}`
+      `/api/packages/search?query=${encodeURIComponent(query)}&limit=${limit}`
     );
     return response;
   }
@@ -145,7 +145,7 @@ class PipService {
       version?: string;
       message: string;
       duration: number;
-    }>("/api/pip/install", {
+    }>("/api/packages/install", {
       package: name,
       version,
       upgrade,
@@ -158,7 +158,7 @@ class PipService {
   async installPackages(
     packages: Array<{ name: string; version?: string }>
   ): Promise<InstallResult[]> {
-    const response = await apiClient.post<InstallResult[]>("/api/pip/install-multiple", {
+    const response = await apiClient.post<InstallResult[]>("/api/packages/install-multiple", {
       packages,
     });
     return response;
@@ -166,7 +166,7 @@ class PipService {
 
   // Install from requirements.txt
   async installFromRequirements(content: string): Promise<InstallResult[]> {
-    const response = await apiClient.post<InstallResult[]>("/api/pip/install-requirements", {
+    const response = await apiClient.post<InstallResult[]>("/api/packages/install-requirements", {
       content,
     });
     return response;
@@ -174,7 +174,7 @@ class PipService {
 
   // Install with streaming progress
   async *installWithProgress(name: string, version?: string): AsyncGenerator<InstallProgress> {
-    const stream = apiClient.streamSSE("/api/pip/install/stream", {
+    const stream = apiClient.streamSSE("/api/packages/install/stream", {
       package: name,
       version,
     });
@@ -196,7 +196,7 @@ class PipService {
 
   // Uninstall package
   async uninstallPackage(name: string): Promise<UninstallResult> {
-    const response = await apiClient.post<UninstallResult>("/api/pip/uninstall", {
+    const response = await apiClient.post<UninstallResult>("/api/packages/uninstall", {
       package: name,
     });
     return response;
@@ -204,7 +204,7 @@ class PipService {
 
   // Uninstall multiple packages
   async uninstallPackages(names: string[]): Promise<UninstallResult[]> {
-    const response = await apiClient.post<UninstallResult[]>("/api/pip/uninstall-multiple", {
+    const response = await apiClient.post<UninstallResult[]>("/api/packages/uninstall-multiple", {
       packages: names,
     });
     return response;
@@ -229,7 +229,7 @@ class PipService {
         current_version: string;
         latest_version: string;
       }>
-    >("/api/pip/outdated");
+    >("/api/packages/outdated");
 
     return response.map((p) => ({
       name: p.name,
@@ -240,7 +240,7 @@ class PipService {
 
   // Generate requirements.txt
   async generateRequirements(): Promise<string> {
-    const response = await apiClient.get<{ content: string }>("/api/pip/requirements");
+    const response = await apiClient.get<{ content: string }>("/api/packages/requirements");
     return response.content;
   }
 
@@ -254,7 +254,7 @@ class PipService {
         markers?: string;
       }>;
       errors: string[];
-    }>("/api/pip/parse-requirements", { content });
+    }>("/api/packages/parse-requirements", { content });
 
     return response;
   }
@@ -287,7 +287,7 @@ class PipService {
         version: string;
         required: string;
       }>;
-    }>(`/api/pip/packages/${encodeURIComponent(name)}/dependencies`);
+    }>(`/api/packages/${encodeURIComponent(name)}/dependencies`);
 
     return response;
   }
@@ -312,7 +312,7 @@ class PipService {
       home_page?: string;
       project_urls: Record<string, string>;
       releases: string[];
-    }>(`/api/pip/pypi/${encodeURIComponent(name)}`);
+    }>(`/api/packages/pypi/${encodeURIComponent(name)}`);
 
     return {
       name: response.name,
@@ -336,7 +336,7 @@ class PipService {
       success: boolean;
       path: string;
       python_version: string;
-    }>("/api/pip/venv/create", {
+    }>("/api/packages/venv/create", {
       path,
       python_version: pythonVersion,
     });
@@ -364,7 +364,7 @@ class PipService {
         python_version: string;
         packages_count: number;
       }>
-    >("/api/pip/venv/list");
+    >("/api/packages/venv/list");
 
     return response.map((v) => ({
       name: v.name,
@@ -376,13 +376,13 @@ class PipService {
 
   // Get pip version
   async getVersion(): Promise<string> {
-    const response = await apiClient.get<{ version: string }>("/api/pip/version");
+    const response = await apiClient.get<{ version: string }>("/api/packages/version");
     return response.version;
   }
 
   // Check pip config
   async getConfig(): Promise<Record<string, string>> {
-    const response = await apiClient.get<Record<string, string>>("/api/pip/config");
+    const response = await apiClient.get<Record<string, string>>("/api/packages/config");
     return response;
   }
 }

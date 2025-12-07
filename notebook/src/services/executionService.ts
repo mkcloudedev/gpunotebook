@@ -238,15 +238,13 @@ class ExecutionService {
     size?: number;
   }>> {
     try {
-      const response = await apiClient.post<{ variables: Array<{
+      const response = await apiClient.get<{ variables: Array<{
         name: string;
         type: string;
         shape?: string;
         preview: string;
         size?: number;
-      }> }>("/api/variables", {
-        kernel_id: kernelId,
-      });
+      }> }>(`/api/kernels/${kernelId}/variables`);
       return response.variables || [];
     } catch (error) {
       console.error("Failed to get variables:", error);
