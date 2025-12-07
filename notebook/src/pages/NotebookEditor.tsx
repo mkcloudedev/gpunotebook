@@ -1327,22 +1327,6 @@ export const NotebookEditorPage = () => {
               isCommandMode={isCommandMode}
               isPresentationMode={isPresentationMode}
               isZenMode={isZenMode}
-              splitViewOverlay={
-                showSplitView ? (
-                  <div className="h-[450px] shadow-2xl rounded-t-lg overflow-hidden border border-border border-b-0 bg-card">
-                    <SplitViewPanel
-                      cells={cells}
-                      leftCellId={splitLeftCellId}
-                      rightCellId={splitRightCellId}
-                      onSelectLeftCell={setSplitLeftCellId}
-                      onSelectRightCell={setSplitRightCellId}
-                      onCellChange={handleEditCell}
-                      onRunCell={handleExecuteCell}
-                      onClose={() => setShowSplitView(false)}
-                    />
-                  </div>
-                ) : undefined
-              }
             />
           </div>
 
@@ -1394,6 +1378,22 @@ export const NotebookEditorPage = () => {
             />
           )}
         </div>
+
+        {/* Split View Panel - above CLI */}
+        {showSplitView && !isZenMode && (
+          <div className="h-[400px] border-t border-border bg-card flex-shrink-0">
+            <SplitViewPanel
+              cells={cells}
+              leftCellId={splitLeftCellId}
+              rightCellId={splitRightCellId}
+              onSelectLeftCell={setSplitLeftCellId}
+              onSelectRightCell={setSplitRightCellId}
+              onCellChange={handleEditCell}
+              onRunCell={handleExecuteCell}
+              onClose={() => setShowSplitView(false)}
+            />
+          </div>
+        )}
 
         {/* Python Console CLI - hidden in Zen Mode */}
         {!isZenMode && (

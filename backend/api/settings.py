@@ -52,11 +52,18 @@ class GeneralSettings(BaseModel):
     notifications: bool = True
 
 
+class ClaudeCodeSettings(BaseModel):
+    model: str = "claude-sonnet-4-20250514"
+    max_output_tokens: int = 32000
+    enabled: bool = True
+
+
 class AllSettings(BaseModel):
     api_keys: APIKeys = APIKeys()
     editor: EditorSettings = EditorSettings()
     kernel: KernelSettings = KernelSettings()
     general: GeneralSettings = GeneralSettings()
+    claude_code: ClaudeCodeSettings = ClaudeCodeSettings()
 
 
 class TestKeyRequest(BaseModel):
@@ -144,6 +151,11 @@ async def get_settings():
             date_format=all_settings.get("date_format", "YYYY-MM-DD"),
             notifications=_parse_bool(all_settings.get("notifications", "true"), True),
         ),
+        claude_code=ClaudeCodeSettings(
+            model=all_settings.get("claude_code_model", "claude-sonnet-4-20250514"),
+            max_output_tokens=_parse_int(all_settings.get("claude_code_max_tokens", "32000"), 32000),
+            enabled=_parse_bool(all_settings.get("claude_code_enabled", "true"), True),
+        ),
     )
 
 
@@ -178,9 +190,18 @@ async def save_settings(settings: AllSettings):
         "timezone": settings.general.timezone,
         "date_format": settings.general.date_format,
         "notifications": str(settings.general.notifications).lower(),
+        # Claude Code
+        "claude_code_model": settings.claude_code.model,
+        "claude_code_max_tokens": str(settings.claude_code.max_output_tokens),
+        "claude_code_enabled": str(settings.claude_code.enabled).lower(),
     }
 
     await settings_service.set_many(settings_dict)
+
+    # Update Claude Code environment variables
+    if settings.claude_code.model:
+        os.environ["CLAUDE_CODE_MODEL"] = settings.claude_code.model
+    os.environ["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(settings.claude_code.max_output_tokens)
 
     # Update environment variables for AI providers
     if settings.api_keys.claude:

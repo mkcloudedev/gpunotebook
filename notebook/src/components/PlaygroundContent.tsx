@@ -108,9 +108,24 @@ export const PlaygroundContent = () => {
 
   // Connect to kernel on mount
   useEffect(() => {
-    connect().catch(console.error);
-    return () => disconnect();
-  }, []);
+    let mounted = true;
+
+    const initKernel = async () => {
+      try {
+        await connect();
+      } catch (error) {
+        if (mounted) {
+          console.error("Failed to connect:", error);
+        }
+      }
+    };
+
+    initKernel();
+
+    return () => {
+      mounted = false;
+    };
+  }, [connect]);
 
   // Live timer while executing
   useEffect(() => {
@@ -125,13 +140,16 @@ export const PlaygroundContent = () => {
   }, [isExecuting, executionStartTime]);
 
   const handleRun = async () => {
-    if (!kernel) {
-      setOutputs([{
-        outputType: "error",
-        ename: "ConnectionError",
-        evalue: "Kernel not available. Please wait...",
-        traceback: [],
-      }]);
+    // Prevent multiple executions
+    if (isExecuting || !kernel) {
+      if (!kernel) {
+        setOutputs([{
+          outputType: "error",
+          ename: "ConnectionError",
+          evalue: "Kernel not available. Please wait...",
+          traceback: [],
+        }]);
+      }
       return;
     }
 
@@ -160,13 +178,29 @@ export const PlaygroundContent = () => {
     setExecutionDuration(null);
   };
 
+  const [isStopping, setIsStopping] = useState(false);
+
   const handleStop = async () => {
-    await interrupt();
+    if (isStopping) return;
+    setIsStopping(true);
+    try {
+      await interrupt();
+    } finally {
+      setIsStopping(false);
+    }
   };
 
+  const [isRestarting, setIsRestarting] = useState(false);
+
   const handleRestart = async () => {
+    if (isRestarting) return;
+    setIsRestarting(true);
     setOutputs([]);
-    await restart();
+    try {
+      await restart();
+    } finally {
+      setIsRestarting(false);
+    }
   };
 
   const insertSnippet = (snippetCode: string) => {
@@ -260,7 +294,7 @@ export const PlaygroundContent = () => {
       <Button
         onClick={isExecuting ? handleStop : handleRun}
         size="sm"
-        disabled={!kernel || kernelStatus === "starting"}
+        disabled={!kernel || kernelStatus === "starting" || isStopping}
         className={cn(
           "gap-2",
           isExecuting

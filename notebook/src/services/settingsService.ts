@@ -38,11 +38,18 @@ export interface GeneralSettings {
   notifications: boolean;
 }
 
+export interface ClaudeCodeSettings {
+  model: string;
+  maxOutputTokens: number;
+  enabled: boolean;
+}
+
 export interface AllSettings {
   apiKeys: APIKeys;
   editor: EditorSettings;
   kernel: KernelSettings;
   general: GeneralSettings;
+  claudeCode: ClaudeCodeSettings;
 }
 
 const DEFAULT_SETTINGS: AllSettings = {
@@ -69,6 +76,11 @@ const DEFAULT_SETTINGS: AllSettings = {
     timezone: "UTC",
     dateFormat: "YYYY-MM-DD",
     notifications: true,
+  },
+  claudeCode: {
+    model: "claude-sonnet-4-20250514",
+    maxOutputTokens: 32000,
+    enabled: true,
   },
 };
 
@@ -109,6 +121,11 @@ class SettingsService {
           date_format: string;
           notifications: boolean;
         };
+        claude_code?: {
+          model: string;
+          max_output_tokens: number;
+          enabled: boolean;
+        };
       }>("/api/settings");
 
       this.settings = {
@@ -140,6 +157,11 @@ class SettingsService {
           timezone: response.general.timezone,
           dateFormat: response.general.date_format,
           notifications: response.general.notifications,
+        },
+        claudeCode: {
+          model: response.claude_code?.model || DEFAULT_SETTINGS.claudeCode.model,
+          maxOutputTokens: response.claude_code?.max_output_tokens || DEFAULT_SETTINGS.claudeCode.maxOutputTokens,
+          enabled: response.claude_code?.enabled ?? DEFAULT_SETTINGS.claudeCode.enabled,
         },
       };
 
@@ -192,6 +214,11 @@ class SettingsService {
           date_format: this.settings.general.dateFormat,
           notifications: this.settings.general.notifications,
         },
+        claude_code: {
+          model: this.settings.claudeCode.model,
+          max_output_tokens: this.settings.claudeCode.maxOutputTokens,
+          enabled: this.settings.claudeCode.enabled,
+        },
       });
     } catch (error) {
       console.error("Failed to save settings to server:", error);
@@ -235,6 +262,12 @@ class SettingsService {
   async updateGeneral(settings: Partial<GeneralSettings>): Promise<void> {
     await this.save({
       general: { ...this.settings.general, ...settings },
+    });
+  }
+
+  async updateClaudeCode(settings: Partial<ClaudeCodeSettings>): Promise<void> {
+    await this.save({
+      claudeCode: { ...this.settings.claudeCode, ...settings },
     });
   }
 

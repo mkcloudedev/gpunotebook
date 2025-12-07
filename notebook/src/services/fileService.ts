@@ -135,24 +135,22 @@ class FileService {
     const response = await apiClient.get<{
       path: string;
       content: string;
-      encoding: string;
-      mime_type: string;
-    }>(`/api/files/read?path=${encodeURIComponent(path)}`);
+    }>(`/api/files/content/${encodeURIComponent(path)}`);
 
     return {
       path: response.path,
       content: response.content,
-      encoding: response.encoding,
-      mimeType: response.mime_type,
+      encoding: "utf-8",
+      mimeType: "text/plain",
     };
   }
 
-  async write(path: string, content: string): Promise<FileInfo> {
-    const response = await apiClient.post<FileInfoResponse>("/api/files/write", {
-      path,
-      content,
-    });
-    return this.parseFileInfo(response);
+  async write(path: string, content: string): Promise<{ path: string; message: string }> {
+    const response = await apiClient.post<{ path: string; message: string }>(
+      `/api/files/write`,
+      { path, content }
+    );
+    return response;
   }
 
   async getDownloadUrl(path: string): Promise<string> {

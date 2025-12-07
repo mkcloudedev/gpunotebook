@@ -17,6 +17,7 @@ from models.ai import (
 from ai.gateway import ai_gateway
 from core.exceptions import AIProviderError
 from services.settings_service import settings_service
+from services.claude_code_service import claude_code_service
 
 router = APIRouter()
 
@@ -311,3 +312,116 @@ async def track_token_usage(
 async def reset_token_usage():
     """Reset token usage statistics."""
     await settings_service.delete(TOKEN_USAGE_KEY)
+
+
+# ============================================================================
+# CLAUDE CODE CLI INTEGRATION
+# ============================================================================
+
+class ClaudeCodeRequest(BaseModel):
+    messages: List[ChatMessage]
+    system_prompt: Optional[str] = None
+    model: Optional[str] = None
+    notebook_context: Optional[dict] = None
+
+
+class ClaudeCodeStatusResponse(BaseModel):
+    available: bool
+    version: Optional[str] = None
+    path: str
+
+
+@router.get("/claude-code/status", response_model=ClaudeCodeStatusResponse)
+async def get_claude_code_status():
+    """Check if Claude Code CLI is available."""
+    available = await claude_code_service.check_available()
+    version = await claude_code_service.get_version() if available else None
+    return ClaudeCodeStatusResponse(
+        available=available,
+        version=version,
+        path=claude_code_service.claude_path
+    )
+
+
+@router.post("/claude-code/chat")
+async def claude_code_chat(request: ClaudeCodeRequest):
+    """Send a message to Claude Code CLI and get response."""
+    # Check if available
+    if not await claude_code_service.check_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Claude Code CLI is not available. Make sure it's installed and authenticated."
+        )
+
+    # Convert messages
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    # Collect full response
+    full_response = ""
+    session_id = None
+    total_cost = None
+    duration_ms = None
+    is_error = False
+
+    async for response in claude_code_service.chat(
+        messages=messages,
+        system_prompt=request.system_prompt,
+        model=request.model,
+        notebook_context=request.notebook_context
+    ):
+        if response.type == "assistant" and response.content:
+            full_response += response.content
+        elif response.type == "result":
+            session_id = response.session_id
+            total_cost = response.total_cost_usd
+            duration_ms = response.duration_ms
+        elif response.type == "error":
+            is_error = True
+            full_response = response.content or "Unknown error"
+
+    return {
+        "content": full_response,
+        "session_id": session_id,
+        "total_cost_usd": total_cost,
+        "duration_ms": duration_ms,
+        "is_error": is_error
+    }
+
+
+@router.post("/claude-code/chat/stream")
+async def claude_code_chat_stream(request: ClaudeCodeRequest):
+    """Stream response from Claude Code CLI."""
+    import json
+
+    # Check if available
+    if not await claude_code_service.check_available():
+        raise HTTPException(
+            status_code=503,
+            detail="Claude Code CLI is not available. Make sure it's installed and authenticated."
+        )
+
+    # Convert messages
+    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    async def generate():
+        async for response in claude_code_service.chat(
+            messages=messages,
+            system_prompt=request.system_prompt,
+            model=request.model,
+            notebook_context=request.notebook_context
+        ):
+            if response.type == "assistant" and response.content:
+                yield f"data: {json.dumps({'type': 'content', 'content': response.content})}\n\n"
+            elif response.type == "result":
+                yield f"data: {json.dumps({'type': 'result', 'session_id': response.session_id, 'total_cost_usd': response.total_cost_usd, 'duration_ms': response.duration_ms})}\n\n"
+            elif response.type == "error":
+                yield f"data: {json.dumps({'type': 'error', 'content': response.content})}\n\n"
+            elif response.type == "init":
+                yield f"data: {json.dumps({'type': 'init', 'session_id': response.session_id})}\n\n"
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
+    )

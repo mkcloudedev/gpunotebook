@@ -60,7 +60,6 @@ interface NotebookEditorContentProps {
   onClearOutput?: (cellId: string) => void;
   onSplitCell?: (cellId: string, lineNumber: number) => void;
   kernelId?: string;
-  splitViewOverlay?: React.ReactNode;
   isCommandMode?: boolean;
   isPresentationMode?: boolean;
   isZenMode?: boolean;
@@ -86,7 +85,6 @@ export const NotebookEditorContent = ({
   onClearOutput,
   onSplitCell,
   kernelId,
-  splitViewOverlay,
   isCommandMode = false,
   isPresentationMode = false,
   isZenMode = false,
@@ -221,12 +219,6 @@ export const NotebookEditorContent = ({
                 isZenMode={isZenMode}
               />
             ))}
-            {/* Split View Overlay */}
-            {splitViewOverlay && (
-              <div className="sticky bottom-0 z-10">
-                {splitViewOverlay}
-              </div>
-            )}
           </div>
         )}
       </div>

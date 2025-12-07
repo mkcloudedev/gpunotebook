@@ -3,10 +3,16 @@ File management API endpoints.
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from models.file import FileInfo, DirectoryListing, UploadResponse
 from services.file_manager import file_manager
 from core.exceptions import FileOperationError
+
+
+class WriteFileRequest(BaseModel):
+    path: str
+    content: str
 
 router = APIRouter()
 
@@ -70,5 +76,25 @@ async def create_directory(path: str):
     try:
         await file_manager.create_directory(path)
         return {"message": f"Directory {path} created"}
+    except FileOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/content/{path:path}")
+async def read_file_content(path: str):
+    """Read file content as text."""
+    try:
+        content = await file_manager.read_file_content(path)
+        return {"path": path, "content": content}
+    except FileOperationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/write")
+async def write_file_content(request: WriteFileRequest):
+    """Write content to a file."""
+    try:
+        await file_manager.write_file_content(request.path, request.content)
+        return {"message": f"File {request.path} written", "path": request.path}
     except FileOperationError as e:
         raise HTTPException(status_code=400, detail=str(e))

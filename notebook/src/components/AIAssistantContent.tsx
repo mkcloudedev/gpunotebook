@@ -28,6 +28,7 @@ import {
   X,
   RefreshCw,
   Square,
+  Terminal,
 } from "lucide-react";
 import { cn, copyToClipboard as copyText } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -49,6 +50,7 @@ import { aiService, AIProvider, ChatRequest } from "@/services/aiService";
 import { useKernelExecution } from "@/hooks/useKernelExecution";
 import { CellOutput } from "@/types/notebook";
 import { MonacoCodeEditor } from "./notebook/MonacoCodeEditor";
+import { parseAIResponse, AIAction, ActionResult } from "@/services/aiToolsHandler";
 
 interface AIMessage {
   id: string;
@@ -188,7 +190,8 @@ export const AIAssistantContent = () => {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState<AIProvider>("claude");
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>("claude-code");
+  const [claudeCodeAvailable, setClaudeCodeAvailable] = useState<boolean | null>(null);
   const [conversationTitle, setConversationTitle] = useState("New Chat");
   const [tokenCount, setTokenCount] = useState(0);
   const [copied, setCopied] = useState<string | null>(null);
@@ -224,6 +227,17 @@ export const AIAssistantContent = () => {
   // Connect to kernel on mount
   useEffect(() => {
     connectKernel().catch(console.error);
+  }, []);
+
+  // Check Claude Code CLI availability
+  useEffect(() => {
+    aiService.getClaudeCodeStatus().then((status) => {
+      setClaudeCodeAvailable(status.available);
+      // If Claude Code is not available, fallback to Claude API
+      if (!status.available && selectedProvider === "claude-code") {
+        setSelectedProvider("claude");
+      }
+    });
   }, []);
 
   // Save conversations when they change
@@ -337,40 +351,85 @@ export const AIAssistantContent = () => {
     }
 
     try {
-      const request: ChatRequest = {
-        provider: selectedProvider,
-        messages: newMessages
-          .filter((m) => m.role !== "system" && m.id !== "welcome")
-          .map((m) => ({ role: m.role, content: m.content })),
-        systemPrompt: "You are a helpful AI coding assistant. You help with Python, GPU programming, machine learning, and data analysis. When providing code, use markdown code blocks with the language specified.",
-      };
+      const systemPrompt = `You are an AI coding assistant in GPU Notebook. You help with Python, GPU programming, machine learning, and data analysis.
+
+When providing code, use markdown code blocks with the language specified.
+
+You can execute actions by including a JSON block in your response:
+\`\`\`json
+{
+  "message": "Your response message",
+  "actions": [
+    { "tool": "executeCode", "params": { "code": "print('Hello')" } }
+  ]
+}
+\`\`\`
+
+Available tools:
+CODE EXECUTION:
+- executeCode: Execute Python code directly { "code": "..." }
+- createCell: Create code for a new notebook { "source": "..." }
+
+FILE MANAGEMENT:
+- readFile: Read a file { "path": "file.py" }
+- writeFile: Write/create a file { "path": "file.py", "content": "..." }
+- listDirectory: List files { "path": "folder" } (optional, defaults to root)
+- deleteFile: Delete a file { "path": "file.py" }
+- createDirectory: Create a folder { "path": "new_folder" }
+
+Use tools when the user asks you to run code, manage files, or perform actions.`;
+
+      const apiMessages = newMessages
+        .filter((m) => m.role !== "system" && m.id !== "welcome")
+        .map((m) => ({ role: m.role, content: m.content }));
 
       let responseContent = "";
       let realTokenCount: number | undefined;
-      let model: string | undefined;
 
-      // Use streaming API
-      for await (const chunk of aiService.chatStream(request)) {
-        try {
-          const parsed = JSON.parse(chunk);
-          if (parsed.content) {
-            responseContent += parsed.content;
+      // Use Claude Code CLI if selected
+      if (selectedProvider === "claude-code") {
+        // Use Claude Code streaming
+        for await (const chunk of aiService.claudeCodeChatStream({
+          messages: apiMessages,
+          systemPrompt,
+        })) {
+          if (chunk.type === "content" && chunk.content) {
+            responseContent += chunk.content;
+            setStreamingContent(responseContent);
+            scrollToBottom();
+          } else if (chunk.type === "error") {
+            throw new Error(chunk.content || "Claude Code error");
+          }
+        }
+      } else {
+        // Use regular API streaming
+        const request: ChatRequest = {
+          provider: selectedProvider,
+          messages: apiMessages,
+          systemPrompt,
+        };
+
+        for await (const chunk of aiService.chatStream(request)) {
+          try {
+            const parsed = JSON.parse(chunk);
+            if (parsed.content) {
+              responseContent += parsed.content;
+              setStreamingContent(responseContent);
+              scrollToBottom();
+            }
+            if (parsed.done && parsed.usage) {
+              realTokenCount = (parsed.usage.input_tokens || 0) + (parsed.usage.output_tokens || 0);
+            }
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
+          } catch (e) {
+            // If not valid JSON, treat as plain text (fallback)
+            if (!(e instanceof SyntaxError)) throw e;
+            responseContent += chunk;
             setStreamingContent(responseContent);
             scrollToBottom();
           }
-          if (parsed.done && parsed.usage) {
-            realTokenCount = (parsed.usage.input_tokens || 0) + (parsed.usage.output_tokens || 0);
-            model = parsed.model;
-          }
-          if (parsed.error) {
-            throw new Error(parsed.error);
-          }
-        } catch (e) {
-          // If not valid JSON, treat as plain text (fallback)
-          if (!(e instanceof SyntaxError)) throw e;
-          responseContent += chunk;
-          setStreamingContent(responseContent);
-          scrollToBottom();
         }
       }
 
@@ -384,6 +443,15 @@ export const AIAssistantContent = () => {
 
       const updatedMessages = [...newMessages, assistantMessage];
       setMessages(updatedMessages);
+
+      // Parse AI response for actions
+      const parsedResponse = parseAIResponse(responseContent);
+      if (parsedResponse.actions && parsedResponse.actions.length > 0) {
+        // Process each action
+        for (const action of parsedResponse.actions) {
+          await processAIAction(action);
+        }
+      }
 
       // Save to conversation
       if (currentConversationId) {
@@ -503,14 +571,150 @@ export const AIAssistantContent = () => {
     closeActionModal();
   };
 
+  // Process AI action from parsed response
+  const processAIAction = async (action: AIAction) => {
+    const { tool, params } = action;
+
+    switch (tool) {
+      case "executeCode": {
+        // Execute code directly using kernel
+        const code = (params.code as string) || (params.source as string);
+        if (code && kernel) {
+          setActionOutput([]);
+          openActionModal("executeCode", code);
+          try {
+            await executeCode("ai-action", code);
+          } catch (error) {
+            console.error("AI action execute error:", error);
+          }
+        }
+        break;
+      }
+
+      case "createCell": {
+        // Create a new notebook with this code
+        const code = (params.code as string) || (params.source as string);
+        if (code) {
+          sessionStorage.setItem("newNotebookCode", code);
+          // Show notification instead of redirecting
+          const createMessage: AIMessage = {
+            id: (Date.now() + 2).toString(),
+            role: "system",
+            content: `📝 Code ready to create notebook. Click "New Notebook" action below to proceed.`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, createMessage]);
+          openActionModal("createNotebook", code);
+        }
+        break;
+      }
+
+      case "editCell":
+      case "deleteCell":
+      case "readCellOutput":
+      case "listCells": {
+        // These are notebook-specific actions - show info message
+        const infoMessage: AIMessage = {
+          id: (Date.now() + 2).toString(),
+          role: "system",
+          content: `ℹ️ The action "${tool}" is only available within a notebook. Open a notebook to use this feature.`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, infoMessage]);
+        break;
+      }
+
+      // File tools - import fileService dynamically to avoid circular deps
+      case "readFile":
+      case "writeFile":
+      case "listDirectory":
+      case "deleteFile":
+      case "createDirectory": {
+        try {
+          const { fileService } = await import("@/services/fileService");
+          let resultMessage = "";
+
+          if (tool === "readFile") {
+            const path = (params.path as string) || (params.file_path as string);
+            if (path) {
+              const content = await fileService.read(path);
+              resultMessage = `📄 **File: ${path}**\n\`\`\`\n${content.content.slice(0, 2000)}${content.content.length > 2000 ? "\n...(truncated)" : ""}\n\`\`\``;
+            }
+          } else if (tool === "writeFile") {
+            const path = (params.path as string) || (params.file_path as string);
+            const content = (params.content as string) || (params.data as string);
+            if (path && content !== undefined) {
+              await fileService.write(path, content);
+              resultMessage = `✅ File written: ${path}`;
+            }
+          } else if (tool === "listDirectory") {
+            const path = (params.path as string) || (params.directory as string) || "";
+            const files = await fileService.list(path);
+            const fileList = files.map(f => `${f.isDirectory ? "📁" : "📄"} ${f.name}`).join("\n");
+            resultMessage = `📂 **Directory: ${path || "/"}**\n${fileList || "(empty)"}`;
+          } else if (tool === "deleteFile") {
+            const path = (params.path as string) || (params.file_path as string);
+            if (path) {
+              await fileService.delete(path);
+              resultMessage = `🗑️ Deleted: ${path}`;
+            }
+          } else if (tool === "createDirectory") {
+            const path = (params.path as string) || (params.directory as string);
+            if (path) {
+              await fileService.createDirectory(path);
+              resultMessage = `📁 Created directory: ${path}`;
+            }
+          }
+
+          if (resultMessage) {
+            const fileActionMessage: AIMessage = {
+              id: (Date.now() + 2).toString(),
+              role: "system",
+              content: resultMessage,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, fileActionMessage]);
+          }
+        } catch (error) {
+          const errorMessage: AIMessage = {
+            id: (Date.now() + 2).toString(),
+            role: "system",
+            content: `❌ File operation failed: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: new Date(),
+          };
+          setMessages((prev) => [...prev, errorMessage]);
+        }
+        break;
+      }
+
+      default:
+        console.log("Unknown AI action:", tool);
+    }
+  };
+
   const getProviderIcon = (provider: AIProvider) => {
     switch (provider) {
       case "claude":
         return Sparkles;
+      case "claude-code":
+        return Terminal;
       case "openai":
         return Bot;
       case "gemini":
         return Gem;
+    }
+  };
+
+  const getProviderLabel = (provider: AIProvider) => {
+    switch (provider) {
+      case "claude":
+        return "Claude API";
+      case "claude-code":
+        return "Claude Code";
+      case "openai":
+        return "OpenAI";
+      case "gemini":
+        return "Gemini";
     }
   };
 
@@ -625,14 +829,22 @@ export const AIAssistantContent = () => {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted">
                   <ProviderIcon className="h-4 w-4 text-primary" />
-                  <span className="capitalize text-foreground">{selectedProvider}</span>
+                  <span className="text-foreground">{getProviderLabel(selectedProvider)}</span>
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
+                {claudeCodeAvailable && (
+                  <DropdownMenuItem onClick={() => setSelectedProvider("claude-code")}>
+                    <Terminal className="mr-2 h-4 w-4" />
+                    Claude Code
+                    <span className="ml-2 text-[10px] text-muted-foreground">(CLI)</span>
+                    {selectedProvider === "claude-code" && <Check className="ml-auto h-4 w-4 text-primary" />}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => setSelectedProvider("claude")}>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  Claude
+                  Claude API
                   {selectedProvider === "claude" && <Check className="ml-auto h-4 w-4 text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setSelectedProvider("openai")}>
@@ -706,8 +918,10 @@ export const AIAssistantContent = () => {
                 <ProviderIcon className="h-4 w-4 text-success" />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-medium capitalize text-foreground">{selectedProvider}</p>
-                <p className="text-[10px] text-success">Ready</p>
+                <p className="text-xs font-medium text-foreground">{getProviderLabel(selectedProvider)}</p>
+                <p className="text-[10px] text-success">
+                  {selectedProvider === "claude-code" ? "Using CLI" : "Ready"}
+                </p>
               </div>
               <span className="h-2 w-2 rounded-full bg-success" />
             </div>

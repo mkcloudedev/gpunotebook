@@ -2,7 +2,7 @@
 
 import apiClient from "./apiClient";
 
-export type AIProvider = "claude" | "openai" | "gemini";
+export type AIProvider = "claude" | "openai" | "gemini" | "claude-code";
 
 export interface AIMessage {
   id: string;
@@ -252,6 +252,100 @@ class AIService {
       return `${(count / 1000).toFixed(1)}K`;
     }
     return count.toString();
+  }
+
+  // ============================================================================
+  // CLAUDE CODE CLI
+  // ============================================================================
+
+  async getClaudeCodeStatus(): Promise<{
+    available: boolean;
+    version: string | null;
+    path: string;
+  }> {
+    try {
+      const response = await apiClient.get<{
+        available: boolean;
+        version: string | null;
+        path: string;
+      }>("/api/ai/claude-code/status");
+      return response;
+    } catch {
+      return { available: false, version: null, path: "claude" };
+    }
+  }
+
+  async claudeCodeChat(request: {
+    messages: Array<{ role: string; content: string }>;
+    systemPrompt?: string;
+    model?: string;
+    notebookContext?: ChatRequest["notebookContext"];
+  }): Promise<{
+    content: string;
+    sessionId: string | null;
+    totalCostUsd: number | null;
+    durationMs: number | null;
+    isError: boolean;
+  }> {
+    const response = await apiClient.post<{
+      content: string;
+      session_id: string | null;
+      total_cost_usd: number | null;
+      duration_ms: number | null;
+      is_error: boolean;
+    }>("/api/ai/claude-code/chat", {
+      messages: request.messages,
+      system_prompt: request.systemPrompt,
+      model: request.model,
+      notebook_context: request.notebookContext,
+    });
+
+    return {
+      content: response.content,
+      sessionId: response.session_id,
+      totalCostUsd: response.total_cost_usd,
+      durationMs: response.duration_ms,
+      isError: response.is_error,
+    };
+  }
+
+  async *claudeCodeChatStream(request: {
+    messages: Array<{ role: string; content: string }>;
+    systemPrompt?: string;
+    model?: string;
+    notebookContext?: ChatRequest["notebookContext"];
+  }): AsyncGenerator<{
+    type: "content" | "result" | "error" | "init";
+    content?: string;
+    sessionId?: string;
+    totalCostUsd?: number;
+    durationMs?: number;
+  }> {
+    const stream = apiClient.streamSSE("/api/ai/claude-code/chat/stream", {
+      messages: request.messages,
+      system_prompt: request.systemPrompt,
+      model: request.model,
+      notebook_context: request.notebookContext,
+    });
+
+    for await (const chunk of stream) {
+      if (chunk === "[DONE]") {
+        return;
+      }
+
+      try {
+        const data = JSON.parse(chunk);
+        yield {
+          type: data.type,
+          content: data.content,
+          sessionId: data.session_id,
+          totalCostUsd: data.total_cost_usd,
+          durationMs: data.duration_ms,
+        };
+      } catch {
+        // Skip non-JSON chunks
+      }
+    }
   }
 }
 

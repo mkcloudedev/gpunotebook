@@ -7,6 +7,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from kernel.manager import kernel_manager
+
 router = APIRouter()
 
 
@@ -30,6 +32,7 @@ class InstallResult(BaseModel):
     success: bool
     message: str
     output: str = ""
+    kernels_restarted: int = 0
 
 
 class PackagesResponse(BaseModel):
@@ -74,9 +77,25 @@ async def list_packages():
         return PackagesResponse(packages=[])
 
 
+async def restart_all_kernels() -> int:
+    """Restart all active kernels to pick up new packages."""
+    restarted = 0
+    try:
+        kernels = await kernel_manager.list_kernels()
+        for kernel in kernels:
+            try:
+                await kernel_manager.restart_kernel(kernel.id)
+                restarted += 1
+            except Exception as e:
+                print(f"Failed to restart kernel {kernel.id}: {e}")
+    except Exception as e:
+        print(f"Error restarting kernels: {e}")
+    return restarted
+
+
 @router.post("/install", response_model=InstallResult)
 async def install_package(request: InstallRequest):
-    """Install a pip package."""
+    """Install a pip package and restart all kernels."""
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", request.package],
@@ -86,10 +105,17 @@ async def install_package(request: InstallRequest):
         )
 
         success = result.returncode == 0
+        kernels_restarted = 0
+
+        # Restart all kernels if installation was successful
+        if success:
+            kernels_restarted = await restart_all_kernels()
+
         return InstallResult(
             success=success,
-            message="Package installed successfully" if success else "Installation failed",
-            output=result.stdout + result.stderr
+            message=f"Package installed successfully. {kernels_restarted} kernel(s) restarted." if success else "Installation failed",
+            output=result.stdout + result.stderr,
+            kernels_restarted=kernels_restarted
         )
     except subprocess.TimeoutExpired:
         return InstallResult(
@@ -107,7 +133,7 @@ async def install_package(request: InstallRequest):
 
 @router.post("/uninstall", response_model=InstallResult)
 async def uninstall_package(request: InstallRequest):
-    """Uninstall a pip package."""
+    """Uninstall a pip package and restart all kernels."""
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "uninstall", "-y", request.package],
@@ -117,10 +143,17 @@ async def uninstall_package(request: InstallRequest):
         )
 
         success = result.returncode == 0
+        kernels_restarted = 0
+
+        # Restart all kernels if uninstallation was successful
+        if success:
+            kernels_restarted = await restart_all_kernels()
+
         return InstallResult(
             success=success,
-            message="Package uninstalled successfully" if success else "Uninstallation failed",
-            output=result.stdout + result.stderr
+            message=f"Package uninstalled successfully. {kernels_restarted} kernel(s) restarted." if success else "Uninstallation failed",
+            output=result.stdout + result.stderr,
+            kernels_restarted=kernels_restarted
         )
     except Exception as e:
         return InstallResult(
@@ -182,7 +215,7 @@ async def export_requirements():
 
 @router.post("/install-requirements", response_model=InstallResult)
 async def install_from_requirements(requirements: str):
-    """Install packages from requirements.txt content."""
+    """Install packages from requirements.txt content and restart all kernels."""
     import tempfile
     import os
 
@@ -201,10 +234,17 @@ async def install_from_requirements(requirements: str):
             )
 
             success = result.returncode == 0
+            kernels_restarted = 0
+
+            # Restart all kernels if installation was successful
+            if success:
+                kernels_restarted = await restart_all_kernels()
+
             return InstallResult(
                 success=success,
-                message="Requirements installed successfully" if success else "Installation failed",
-                output=result.stdout + result.stderr
+                message=f"Requirements installed successfully. {kernels_restarted} kernel(s) restarted." if success else "Installation failed",
+                output=result.stdout + result.stderr,
+                kernels_restarted=kernels_restarted
             )
         finally:
             os.unlink(temp_path)

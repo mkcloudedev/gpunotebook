@@ -43,6 +43,7 @@ export function useKernelExecution(
   const executionResolveRef = useRef<Map<string, () => void>>(new Map());
   const isMountedRef = useRef(true);
   const isConnectingRef = useRef(false);
+  const executingCellIdRef = useRef<string | null>(null);
 
   // Connect to or create a kernel
   const connect = useCallback(async () => {
@@ -58,26 +59,70 @@ export function useKernelExecution(
       // Try to find existing kernel or create new one
       let kernelInstance: Kernel;
 
+      // Get list of existing kernels
+      const kernels = await kernelService.list();
+
+      // Check if component was unmounted during async operation
+      if (!isMountedRef.current) {
+        isConnectingRef.current = false;
+        return;
+      }
+
       if (notebookId) {
-        // Try to get existing kernel for notebook
-        const kernels = await kernelService.list();
-
-        // Check if component was unmounted during async operation
-        if (!isMountedRef.current) {
-          isConnectingRef.current = false;
-          return;
-        }
-
+        // Try to get existing kernel for this notebook
         const existingKernel = kernels.find((k) => k.notebookId === notebookId);
 
         if (existingKernel) {
           kernelInstance = existingKernel;
         } else {
-          kernelInstance = await kernelService.create("python3", notebookId);
+          // No kernel for this notebook - try to reuse an idle kernel or create new
+          const idleKernel = kernels.find((k) => k.status === "idle");
+
+          if (idleKernel) {
+            // Reuse idle kernel
+            kernelInstance = idleKernel;
+          } else if (kernels.length >= 5) {
+            // Too many kernels, delete oldest ones before creating
+            const sortedKernels = [...kernels].sort((a, b) =>
+              new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+            );
+            // Delete oldest kernels to make room
+            for (let i = 0; i < Math.min(3, sortedKernels.length); i++) {
+              try {
+                await kernelService.delete(sortedKernels[i].id);
+              } catch {
+                // Ignore delete errors
+              }
+            }
+            kernelInstance = await kernelService.create("python3", notebookId);
+          } else {
+            kernelInstance = await kernelService.create("python3", notebookId);
+          }
         }
       } else {
-        // Create anonymous kernel
-        kernelInstance = await kernelService.create("python3");
+        // For anonymous kernels (like Playground), try to reuse existing one first
+        // Find an idle kernel without notebookId (anonymous)
+        const idleKernel = kernels.find((k) => !k.notebookId && k.status === "idle");
+
+        if (idleKernel) {
+          kernelInstance = idleKernel;
+        } else if (kernels.length >= 5) {
+          // Too many kernels, delete oldest ones before creating
+          const sortedKernels = [...kernels].sort((a, b) =>
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+          for (let i = 0; i < Math.min(3, sortedKernels.length); i++) {
+            try {
+              await kernelService.delete(sortedKernels[i].id);
+            } catch {
+              // Ignore delete errors
+            }
+          }
+          kernelInstance = await kernelService.create("python3");
+        } else {
+          // Create anonymous kernel
+          kernelInstance = await kernelService.create("python3");
+        }
       }
 
       // Check if component was unmounted during async operation
@@ -102,16 +147,27 @@ export function useKernelExecution(
 
         setIsConnected(true);
 
-        // Set up message handler
-        websocketService.onMessage("kernel_output", (output: KernelOutput) => {
-          handleKernelOutput(output);
-        });
+        // Set up message handler for all messages
+        websocketService.onMessage((message) => {
+          // Handle different message types
+          const msgType = message.msg_type || message.type;
 
-        websocketService.onMessage("execution_state", (state: ExecutionState) => {
-          handleExecutionState(state);
+          if (msgType === "stream" || msgType === "execute_result" || msgType === "display_data" || msgType === "error") {
+            handleKernelOutput(message as unknown as KernelOutput);
+          } else if (msgType === "status" || msgType === "execution_state") {
+            // Handle status messages
+            const execState = message.execution_state || message.content?.execution_state;
+            if (execState) {
+              handleExecutionState({ execution_state: execState as "idle" | "busy" | "starting" });
+            }
+          } else if (msgType === "execute_reply" || msgType === "execution_complete") {
+            // Execution completed
+            handleExecutionState({ execution_state: "idle" });
+          } else if (msgType === "execution_start") {
+            handleExecutionState({ execution_state: "busy" });
+          }
         });
       } catch (wsError) {
-        console.warn("WebSocket connection failed, will use REST API:", wsError);
         // WebSocket failed but kernel is ready - can still use REST API
         if (!isMountedRef.current) {
           isConnectingRef.current = false;
@@ -137,10 +193,17 @@ export function useKernelExecution(
     }
   }, [notebookId]);
 
+  // Store callbacks in refs to avoid stale closures
+  const onOutputRef = useRef(onOutput);
+  const onExecutionCompleteRef = useRef(onExecutionComplete);
+  onOutputRef.current = onOutput;
+  onExecutionCompleteRef.current = onExecutionComplete;
+
   // Handle kernel output messages
   const handleKernelOutput = useCallback(
     (output: KernelOutput) => {
-      const cellId = output.parent_msg_id || executingCellId;
+      // Get cellId from message or from ref
+      const cellId = output.cell_id || output.parent_msg_id || executingCellIdRef.current;
       if (!cellId) return;
 
       const cellOutput: CellOutput = convertKernelOutput(output);
@@ -151,11 +214,11 @@ export function useKernelExecution(
       outputBufferRef.current.set(cellId, currentBuffer);
 
       // Notify listener
-      if (onOutput) {
-        onOutput(cellId, cellOutput);
+      if (onOutputRef.current) {
+        onOutputRef.current(cellId, cellOutput);
       }
     },
-    [executingCellId, onOutput]
+    []
   );
 
   // Handle execution state changes
@@ -166,60 +229,64 @@ export function useKernelExecution(
       } else if (state.execution_state === "idle") {
         setKernelStatus("idle");
 
-        // Complete execution
-        if (executingCellId) {
-          const resolve = executionResolveRef.current.get(executingCellId);
+        // Complete execution using ref (not state, which may be stale in closure)
+        const cellId = executingCellIdRef.current;
+        if (cellId) {
+          const resolve = executionResolveRef.current.get(cellId);
           if (resolve) {
             resolve();
-            executionResolveRef.current.delete(executingCellId);
+            executionResolveRef.current.delete(cellId);
           }
 
-          if (onExecutionComplete) {
-            onExecutionComplete(executingCellId);
+          if (onExecutionCompleteRef.current) {
+            onExecutionCompleteRef.current(cellId);
           }
 
+          executingCellIdRef.current = null;
           setExecutingCellId(null);
         }
       }
     },
-    [executingCellId, onExecutionComplete]
+    []
   );
 
   // Convert kernel output to CellOutput format
-  const convertKernelOutput = (output: KernelOutput): CellOutput => {
-    switch (output.msg_type) {
+  const convertKernelOutput = (output: KernelOutput & Record<string, unknown>): CellOutput => {
+    const msgType = output.msg_type || output.output_type || output.type;
+
+    switch (msgType) {
       case "stream":
         return {
           outputType: "stream",
-          name: output.content?.name || "stdout",
-          text: output.content?.text || "",
+          name: (output.name as string) || output.content?.name || "stdout",
+          text: (output.text as string) || output.content?.text || "",
         };
 
       case "execute_result":
         return {
           outputType: "execute_result",
-          data: output.content?.data,
-          executionCount: output.content?.execution_count,
+          data: (output.data as Record<string, unknown>) || output.content?.data,
+          executionCount: (output.execution_count as number) || output.content?.execution_count,
         };
 
       case "display_data":
         return {
           outputType: "display_data",
-          data: output.content?.data,
+          data: (output.data as Record<string, unknown>) || output.content?.data,
         };
 
       case "error":
         return {
           outputType: "error",
-          ename: output.content?.ename || "Error",
-          evalue: output.content?.evalue || "",
-          traceback: output.content?.traceback || [],
+          ename: (output.ename as string) || output.content?.ename || "Error",
+          evalue: (output.evalue as string) || output.content?.evalue || "",
+          traceback: (output.traceback as string[]) || output.content?.traceback || [],
         };
 
       default:
         return {
           outputType: "stream",
-          text: JSON.stringify(output.content),
+          text: (output.text as string) || JSON.stringify(output.content || output),
         };
     }
   };
@@ -233,6 +300,7 @@ export function useKernelExecution(
 
       // Clear output buffer for this cell
       outputBufferRef.current.set(cellId, []);
+      executingCellIdRef.current = cellId;
       setExecutingCellId(cellId);
       setKernelStatus("busy");
 
@@ -253,6 +321,7 @@ export function useKernelExecution(
           setTimeout(() => {
             if (executionResolveRef.current.has(cellId)) {
               executionResolveRef.current.delete(cellId);
+              executingCellIdRef.current = null;
               setExecutingCellId(null);
               setKernelStatus("idle");
               reject(new Error("Execution timed out"));
@@ -307,6 +376,7 @@ export function useKernelExecution(
           }
           throw error;
         } finally {
+          executingCellIdRef.current = null;
           setExecutingCellId(null);
           setKernelStatus("idle");
         }
@@ -323,14 +393,13 @@ export function useKernelExecution(
       await kernelService.interrupt(kernel.id);
       websocketService.interrupt(kernel.id);
 
-      if (executingCellId) {
-        setExecutingCellId(null);
-        setKernelStatus("idle");
-      }
+      executingCellIdRef.current = null;
+      setExecutingCellId(null);
+      setKernelStatus("idle");
     } catch (error) {
       console.error("Failed to interrupt kernel:", error);
     }
-  }, [kernel, executingCellId]);
+  }, [kernel]);
 
   // Restart kernel
   const restart = useCallback(async () => {
@@ -341,6 +410,7 @@ export function useKernelExecution(
       const newKernel = await kernelService.restart(kernel.id);
       setKernel(newKernel);
       setKernelStatus("idle");
+      executingCellIdRef.current = null;
       setExecutingCellId(null);
     } catch (error) {
       console.error("Failed to restart kernel:", error);
@@ -378,9 +448,11 @@ export function useKernelExecution(
   // Track mount state and cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
+    isConnectingRef.current = false; // Reset on mount
 
     return () => {
       isMountedRef.current = false;
+      isConnectingRef.current = false; // Reset on unmount
       websocketService.disconnect();
     };
   }, []);

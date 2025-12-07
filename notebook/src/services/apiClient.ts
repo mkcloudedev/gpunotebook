@@ -42,9 +42,18 @@ class ApiClient {
       throw new ApiError(response.status, errorText || response.statusText);
     }
 
+    // Handle 204 No Content
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     const contentType = response.headers.get("content-type");
     if (contentType?.includes("application/json")) {
-      return response.json();
+      const text = await response.text();
+      if (!text) {
+        return undefined as T;
+      }
+      return JSON.parse(text);
     }
     return response.text() as unknown as T;
   }

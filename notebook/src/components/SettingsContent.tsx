@@ -9,6 +9,7 @@ import {
   User,
   Key,
   Loader2,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
@@ -24,6 +25,7 @@ import {
 } from "./ui/select";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
 import { settingsService, AllSettings } from "@/services/settingsService";
+import { aiService } from "@/services/aiService";
 
 export const SettingsContent = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -50,6 +52,13 @@ export const SettingsContent = () => {
   const [kaggleUsername, setKaggleUsername] = useState("");
   const [kaggleKey, setKaggleKey] = useState("");
   const [kaggleConfigured, setKaggleConfigured] = useState(false);
+
+  // Claude Code
+  const [claudeCodeModel, setClaudeCodeModel] = useState("claude-sonnet-4-20250514");
+  const [claudeCodeMaxTokens, setClaudeCodeMaxTokens] = useState("32000");
+  const [claudeCodeEnabled, setClaudeCodeEnabled] = useState(true);
+  const [claudeCodeAvailable, setClaudeCodeAvailable] = useState<boolean | null>(null);
+  const [claudeCodeVersion, setClaudeCodeVersion] = useState<string | null>(null);
 
   // Load settings from API
   const loadSettings = useCallback(async () => {
@@ -79,6 +88,18 @@ export const SettingsContent = () => {
       setDefaultPython(settings.kernel.defaultPython);
       setGpuMemory(String(settings.kernel.gpuMemoryLimit));
       setExecutionTimeout(String(settings.kernel.executionTimeout));
+
+      // Claude Code
+      if (settings.claudeCode) {
+        setClaudeCodeModel(settings.claudeCode.model);
+        setClaudeCodeMaxTokens(String(settings.claudeCode.maxOutputTokens));
+        setClaudeCodeEnabled(settings.claudeCode.enabled);
+      }
+
+      // Check Claude Code CLI availability
+      const claudeCodeStatus = await aiService.getClaudeCodeStatus();
+      setClaudeCodeAvailable(claudeCodeStatus.available);
+      setClaudeCodeVersion(claudeCodeStatus.version);
     } catch (err) {
       console.error("Error loading settings:", err);
     } finally {
@@ -163,6 +184,23 @@ export const SettingsContent = () => {
     } catch (err) {
       console.error("Error saving kernel settings:", err);
       showSaveMessage("error", "Failed to save kernel settings");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveClaudeCode = async () => {
+    setIsSaving(true);
+    try {
+      await settingsService.updateClaudeCode({
+        model: claudeCodeModel,
+        maxOutputTokens: parseInt(claudeCodeMaxTokens),
+        enabled: claudeCodeEnabled,
+      });
+      showSaveMessage("success", "Claude Code settings saved");
+    } catch (err) {
+      console.error("Error saving Claude Code settings:", err);
+      showSaveMessage("error", "Failed to save Claude Code settings");
     } finally {
       setIsSaving(false);
     }
@@ -332,6 +370,85 @@ export const SettingsContent = () => {
               )}
               Save Kernel Settings
             </Button>
+          </SettingsSection>
+
+          {/* Claude Code */}
+          <SettingsSection title="Claude Code" description="Configure Claude Code CLI settings">
+            {/* Status indicator */}
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-lg border p-3",
+                claudeCodeAvailable
+                  ? "border-green-500/30 bg-green-500/10"
+                  : "border-amber-500/30 bg-amber-500/10"
+              )}
+            >
+              <Terminal className={cn("h-5 w-5", claudeCodeAvailable ? "text-green-500" : "text-amber-500")} />
+              <div className="flex-1">
+                <p
+                  className={cn(
+                    "text-sm font-medium",
+                    claudeCodeAvailable ? "text-green-500" : "text-amber-500"
+                  )}
+                >
+                  {claudeCodeAvailable === null
+                    ? "Checking..."
+                    : claudeCodeAvailable
+                    ? "CLI Available"
+                    : "CLI Not Found"}
+                </p>
+                {claudeCodeVersion && (
+                  <p className="text-xs text-muted-foreground">{claudeCodeVersion}</p>
+                )}
+              </div>
+              {claudeCodeAvailable && <CheckCircle className="h-4 w-4 text-green-500" />}
+            </div>
+
+            <SettingsSelect
+              label="Model"
+              value={claudeCodeModel}
+              onChange={setClaudeCodeModel}
+              options={[
+                { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
+                { value: "claude-opus-4-5-20251101", label: "Claude Opus 4.5" },
+                { value: "claude-3-5-sonnet-20241022", label: "Claude 3.5 Sonnet" },
+                { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
+              ]}
+            />
+
+            <SettingsSelect
+              label="Max Output Tokens"
+              value={claudeCodeMaxTokens}
+              onChange={setClaudeCodeMaxTokens}
+              options={[
+                { value: "8000", label: "8K" },
+                { value: "16000", label: "16K" },
+                { value: "32000", label: "32K" },
+                { value: "64000", label: "64K" },
+              ]}
+            />
+
+            <SettingsToggle
+              label="Enable Claude Code"
+              description="Use CLI instead of API"
+              checked={claudeCodeEnabled}
+              onChange={setClaudeCodeEnabled}
+            />
+
+            <Button className="w-full mt-4" variant="secondary" onClick={handleSaveClaudeCode} disabled={isSaving}>
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Claude Code Settings
+            </Button>
+
+            {!claudeCodeAvailable && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Install Claude Code CLI: npm install -g @anthropic-ai/claude-code
+              </p>
+            )}
           </SettingsSection>
 
           {/* Kaggle */}

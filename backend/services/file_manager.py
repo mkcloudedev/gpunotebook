@@ -154,5 +154,39 @@ class FileManager:
             _file_executor, os.makedirs, full_path
         )
 
+    def _read_file_sync(self, full_path: str) -> str:
+        """Synchronous file read (runs in thread pool)."""
+        with open(full_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    async def read_file_content(self, path: str) -> str:
+        """Read file content as text."""
+        full_path = self._resolve_path(path)
+
+        if not os.path.exists(full_path):
+            raise FileOperationError(f"File not found: {path}")
+
+        if not os.path.isfile(full_path):
+            raise FileOperationError(f"Not a file: {path}")
+
+        return await asyncio.get_event_loop().run_in_executor(
+            _file_executor, self._read_file_sync, full_path
+        )
+
+    def _write_file_sync(self, full_path: str, content: str) -> None:
+        """Synchronous file write (runs in thread pool)."""
+        # Ensure parent directory exists
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    async def write_file_content(self, path: str, content: str) -> None:
+        """Write content to a file."""
+        full_path = self._resolve_path(path)
+
+        await asyncio.get_event_loop().run_in_executor(
+            _file_executor, self._write_file_sync, full_path, content
+        )
+
 
 file_manager = FileManager()
