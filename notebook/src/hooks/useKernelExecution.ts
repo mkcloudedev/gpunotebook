@@ -88,28 +88,39 @@ export function useKernelExecution(
 
       setKernel(kernelInstance);
 
-      // Connect WebSocket
+      // Connect WebSocket (non-blocking - we can still use REST API if it fails)
       const wsUrl = apiClient.getWebSocketUrl(`/ws/kernel/${kernelInstance.id}`);
-      await websocketService.connect(wsUrl);
+      try {
+        await websocketService.connect(wsUrl);
 
-      // Check if component was unmounted during async operation
-      if (!isMountedRef.current) {
-        websocketService.disconnect();
-        isConnectingRef.current = false;
-        return;
+        // Check if component was unmounted during async operation
+        if (!isMountedRef.current) {
+          websocketService.disconnect();
+          isConnectingRef.current = false;
+          return;
+        }
+
+        setIsConnected(true);
+
+        // Set up message handler
+        websocketService.onMessage("kernel_output", (output: KernelOutput) => {
+          handleKernelOutput(output);
+        });
+
+        websocketService.onMessage("execution_state", (state: ExecutionState) => {
+          handleExecutionState(state);
+        });
+      } catch (wsError) {
+        console.warn("WebSocket connection failed, will use REST API:", wsError);
+        // WebSocket failed but kernel is ready - can still use REST API
+        if (!isMountedRef.current) {
+          isConnectingRef.current = false;
+          return;
+        }
       }
 
-      setIsConnected(true);
+      // Kernel is ready regardless of WebSocket status
       setKernelStatus("idle");
-
-      // Set up message handler
-      websocketService.onMessage("kernel_output", (output: KernelOutput) => {
-        handleKernelOutput(output);
-      });
-
-      websocketService.onMessage("execution_state", (state: ExecutionState) => {
-        handleExecutionState(state);
-      });
     } catch (error) {
       // Ignore abort errors from component unmount
       if (error instanceof Error && error.name === "AbortError") {
@@ -216,40 +227,92 @@ export function useKernelExecution(
   // Execute code
   const execute = useCallback(
     async (cellId: string, code: string): Promise<void> => {
-      if (!kernel || !isConnected) {
-        throw new Error("Kernel not connected");
+      if (!kernel) {
+        throw new Error("Kernel not available");
       }
 
       // Clear output buffer for this cell
       outputBufferRef.current.set(cellId, []);
       setExecutingCellId(cellId);
+      setKernelStatus("busy");
 
       if (onExecutionStart) {
         onExecutionStart(cellId);
       }
 
-      return new Promise((resolve, reject) => {
-        // Store resolve function
-        executionResolveRef.current.set(cellId, resolve);
+      // If WebSocket is connected, use it for real-time output
+      if (isConnected) {
+        return new Promise((resolve, reject) => {
+          // Store resolve function
+          executionResolveRef.current.set(cellId, resolve);
 
-        // Send execute request via WebSocket
-        websocketService.execute(kernel.id, code, cellId);
+          // Send execute request via WebSocket
+          websocketService.execute(kernel.id, code, cellId);
 
-        // Timeout after 5 minutes
-        setTimeout(() => {
-          if (executionResolveRef.current.has(cellId)) {
-            executionResolveRef.current.delete(cellId);
-            setExecutingCellId(null);
-            reject(new Error("Execution timed out"));
+          // Timeout after 5 minutes
+          setTimeout(() => {
+            if (executionResolveRef.current.has(cellId)) {
+              executionResolveRef.current.delete(cellId);
+              setExecutingCellId(null);
+              setKernelStatus("idle");
+              reject(new Error("Execution timed out"));
 
-            if (onExecutionError) {
-              onExecutionError(cellId, "Execution timed out");
+              if (onExecutionError) {
+                onExecutionError(cellId, "Execution timed out");
+              }
+            }
+          }, 5 * 60 * 1000);
+        });
+      } else {
+        // Fallback to REST API
+        try {
+          const response = await apiClient.post<{
+            status: string;
+            outputs: Array<{
+              output_type: string;
+              text?: string;
+              data?: Record<string, unknown>;
+              ename?: string;
+              evalue?: string;
+              traceback?: string[];
+            }>;
+          }>("/api/execute", {
+            kernel_id: kernel.id,
+            code,
+            cell_id: cellId,
+          });
+
+          // Process outputs
+          for (const output of response.outputs || []) {
+            const cellOutput: CellOutput = {
+              outputType: output.output_type as CellOutput["outputType"],
+              text: output.text,
+              data: output.data,
+              ename: output.ename,
+              evalue: output.evalue,
+              traceback: output.traceback,
+            };
+
+            if (onOutput) {
+              onOutput(cellId, cellOutput);
             }
           }
-        }, 5 * 60 * 1000);
-      });
+
+          if (onExecutionComplete) {
+            onExecutionComplete(cellId);
+          }
+        } catch (error) {
+          if (onExecutionError) {
+            onExecutionError(cellId, error instanceof Error ? error.message : "Execution failed");
+          }
+          throw error;
+        } finally {
+          setExecutingCellId(null);
+          setKernelStatus("idle");
+        }
+      }
     },
-    [kernel, isConnected, onExecutionStart, onExecutionError]
+    [kernel, isConnected, onExecutionStart, onExecutionComplete, onExecutionError, onOutput]
   );
 
   // Interrupt execution

@@ -125,11 +125,11 @@ export const PlaygroundContent = () => {
   }, [isExecuting, executionStartTime]);
 
   const handleRun = async () => {
-    if (!isConnected) {
+    if (!kernel) {
       setOutputs([{
         outputType: "error",
         ename: "ConnectionError",
-        evalue: "Not connected to kernel. Please wait...",
+        evalue: "Kernel not available. Please wait...",
         traceback: [],
       }]);
       return;
@@ -260,7 +260,7 @@ export const PlaygroundContent = () => {
       <Button
         onClick={isExecuting ? handleStop : handleRun}
         size="sm"
-        disabled={kernelStatus === "starting" || kernelStatus === "disconnected"}
+        disabled={!kernel || kernelStatus === "starting"}
         className={cn(
           "gap-2",
           isExecuting
