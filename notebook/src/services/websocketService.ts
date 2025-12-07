@@ -12,7 +12,28 @@ export interface WebSocketMessage {
   [key: string]: unknown;
 }
 
+export interface KernelOutput {
+  msg_type: string;
+  parent_msg_id?: string;
+  cell_id?: string;
+  content?: {
+    name?: string;
+    text?: string;
+    data?: Record<string, unknown>;
+    execution_count?: number;
+    ename?: string;
+    evalue?: string;
+    traceback?: string[];
+  };
+}
+
+export interface ExecutionState {
+  execution_state: "idle" | "busy" | "starting";
+  kernel_id?: string;
+}
+
 type MessageHandler = (message: WebSocketMessage) => void;
+type TypedMessageHandler<T> = (message: T) => void;
 type StateHandler = (state: WebSocketState) => void;
 type ErrorHandler = (error: Error) => void;
 
@@ -133,12 +154,22 @@ class WebSocketService {
     });
   }
 
+  // Alias for sendExecute
+  execute(kernelId: string, code: string, cellId: string): void {
+    this.sendExecute(kernelId, code, cellId);
+  }
+
   // Interrupt kernel execution
   sendInterrupt(kernelId: string): void {
     this.send({
       type: "interrupt",
       kernel_id: kernelId,
     });
+  }
+
+  // Alias for sendInterrupt
+  interrupt(kernelId: string): void {
+    this.sendInterrupt(kernelId);
   }
 
   // Request code completion
@@ -148,6 +179,24 @@ class WebSocketService {
       kernel_id: kernelId,
       code,
       cursor_pos: cursorPos,
+    });
+  }
+
+  // Async complete that returns a promise (for hook compatibility)
+  async complete(kernelId: string, code: string, cursorPos: number): Promise<{ matches: string[] }> {
+    return new Promise((resolve) => {
+      const handler = this.onMessage("complete_reply", (message: WebSocketMessage) => {
+        handler(); // unsubscribe
+        resolve({ matches: (message.matches as string[]) || [] });
+      });
+
+      this.sendComplete(kernelId, code, cursorPos);
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        handler();
+        resolve({ matches: [] });
+      }, 5000);
     });
   }
 
@@ -161,10 +210,24 @@ class WebSocketService {
     });
   }
 
-  // Event handlers
-  onMessage(handler: MessageHandler): () => void {
-    this.messageHandlers.add(handler);
-    return () => this.messageHandlers.delete(handler);
+  // Event handlers - supports typed message filtering
+  onMessage(handler: MessageHandler): () => void;
+  onMessage<T>(type: string, handler: TypedMessageHandler<T>): () => void;
+  onMessage<T>(typeOrHandler: string | MessageHandler, handler?: TypedMessageHandler<T>): () => void {
+    if (typeof typeOrHandler === "function") {
+      // Simple handler for all messages
+      this.messageHandlers.add(typeOrHandler);
+      return () => this.messageHandlers.delete(typeOrHandler);
+    } else {
+      // Typed handler for specific message type
+      const wrappedHandler: MessageHandler = (message) => {
+        if (message.type === typeOrHandler || message.msg_type === typeOrHandler) {
+          handler?.(message as T);
+        }
+      };
+      this.messageHandlers.add(wrappedHandler);
+      return () => this.messageHandlers.delete(wrappedHandler);
+    }
   }
 
   onStateChange(handler: StateHandler): () => void {

@@ -33,9 +33,10 @@ interface KernelResponse {
   name: string;
   status: string;
   notebook_id?: string;
-  last_activity: string;
-  execution_count: number;
-  connections: number;
+  last_activity?: string;
+  created_at?: string;
+  execution_count?: number;
+  connections?: number;
 }
 
 class KernelService {
@@ -45,9 +46,9 @@ class KernelService {
       name: data.name,
       status: data.status as KernelStatus,
       notebookId: data.notebook_id,
-      lastActivity: new Date(data.last_activity),
-      executionCount: data.execution_count,
-      connections: data.connections,
+      lastActivity: new Date(data.last_activity || data.created_at || Date.now()),
+      executionCount: data.execution_count || 0,
+      connections: data.connections || 0,
     };
   }
 
