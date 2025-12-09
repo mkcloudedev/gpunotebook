@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Play,
   Square,
@@ -219,6 +219,20 @@ export const ContainersContent = () => {
   const [pullImageName, setPullImageName] = useState("");
   const [portsInput, setPortsInput] = useState("");
 
+  // Pull progress state
+  const [isPulling, setIsPulling] = useState(false);
+  const [pullLogs, setPullLogs] = useState<string[]>([]);
+  const [pullComplete, setPullComplete] = useState(false);
+  const [pullError, setPullError] = useState<string | null>(null);
+  const pullLogsRef = useRef<HTMLPreElement>(null);
+
+  // Auto-scroll pull logs
+  useEffect(() => {
+    if (pullLogsRef.current) {
+      pullLogsRef.current.scrollTop = pullLogsRef.current.scrollHeight;
+    }
+  }, [pullLogs]);
+
   // Load data
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -341,13 +355,42 @@ export const ContainersContent = () => {
   };
 
   const handlePullImage = async () => {
+    if (!pullImageName.trim()) return;
+
+    setIsPulling(true);
+    setPullLogs([]);
+    setPullComplete(false);
+    setPullError(null);
+
     try {
-      await dockerService.pullImage(pullImageName);
+      for await (const event of dockerService.pullImageStream(pullImageName)) {
+        if (event.type === "progress" && event.message) {
+          setPullLogs((prev) => [...prev.slice(-100), event.message!]); // Keep last 100 lines
+        } else if (event.type === "complete") {
+          setPullComplete(true);
+          setPullLogs((prev) => [...prev, `✓ ${event.message}`]);
+          loadData();
+        } else if (event.type === "error") {
+          setPullError(event.message || "Unknown error");
+          setPullLogs((prev) => [...prev, `✗ Error: ${event.message}`]);
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Failed to pull image";
+      setPullError(errorMsg);
+      setPullLogs((prev) => [...prev, `✗ Error: ${errorMsg}`]);
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
+  const handleClosePullDialog = () => {
+    if (!isPulling) {
       setShowPullImage(false);
       setPullImageName("");
-      loadData();
-    } catch (error) {
-      console.error("Failed to pull image:", error);
+      setPullLogs([]);
+      setPullComplete(false);
+      setPullError(null);
     }
   };
 
@@ -650,8 +693,8 @@ export const ContainersContent = () => {
       </Dialog>
 
       {/* Pull Image Dialog */}
-      <Dialog open={showPullImage} onOpenChange={setShowPullImage}>
-        <DialogContent>
+      <Dialog open={showPullImage} onOpenChange={handleClosePullDialog}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Pull Docker Image</DialogTitle>
             <DialogDescription>
@@ -666,16 +709,59 @@ export const ContainersContent = () => {
                 placeholder="nginx:latest or ubuntu:22.04"
                 value={pullImageName}
                 onChange={(e) => setPullImageName(e.target.value)}
+                disabled={isPulling}
               />
             </div>
+
+            {/* Pull Progress Logs */}
+            {(isPulling || pullLogs.length > 0) && (
+              <div className="space-y-2">
+                <Label>Pull Progress</Label>
+                <div
+                  ref={pullLogsRef}
+                  className="h-[300px] overflow-auto rounded-md border bg-black p-3"
+                >
+                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
+                    {pullLogs.length > 0 ? pullLogs.join("\n") : "Starting pull..."}
+                  </pre>
+                </div>
+                {isPulling && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    Pulling image...
+                  </div>
+                )}
+                {pullComplete && (
+                  <div className="flex items-center gap-2 text-sm text-green-500">
+                    <div className="h-2 w-2 rounded-full bg-green-500" />
+                    Pull complete!
+                  </div>
+                )}
+                {pullError && (
+                  <div className="flex items-center gap-2 text-sm text-destructive">
+                    <div className="h-2 w-2 rounded-full bg-destructive" />
+                    {pullError}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPullImage(false)}>
-              Cancel
+            <Button
+              variant="outline"
+              onClick={handleClosePullDialog}
+              disabled={isPulling}
+            >
+              {pullComplete ? "Done" : "Cancel"}
             </Button>
-            <Button onClick={handlePullImage} disabled={!pullImageName}>
-              Pull
-            </Button>
+            {!pullComplete && (
+              <Button
+                onClick={handlePullImage}
+                disabled={!pullImageName.trim() || isPulling}
+              >
+                {isPulling ? "Pulling..." : "Pull"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

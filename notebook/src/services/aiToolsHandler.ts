@@ -1907,11 +1907,14 @@ export const NOTEBOOK_SYSTEM_PROMPT = `You are an AI assistant integrated into G
 AVAILABLE TOOLS:
 
 CELL OPERATIONS:
-- createCell { "source": "code", "position": index }
-- editCell { "cell_id": "id", "source": "new code" }
-- deleteCell { "cell_id": "id" }
-- splitCell { "cell_id": "id", "parts": ["code1", "code2"] }
-- mergeCells { "cell_ids": ["id1", "id2"] }
+- createCell { "source": "code", "position": index } - Create a new cell with code at position
+- editCell { "cell_id": "id", "source": "new code" } - Replace cell content
+- deleteCell { "cell_id": "id" } - Delete a cell
+- splitCell { "cell_id": "id", "parts": ["complete code 1", "complete code 2", ...] }
+  IMPORTANT: When splitting code, each part MUST contain the COMPLETE code for that cell.
+  Do NOT truncate or abbreviate. Include ALL imports, functions, and code in each part.
+  Example: To split into 3 cells, provide 3 complete code strings in the "parts" array.
+- mergeCells { "cell_ids": ["id1", "id2"] } - Merge multiple cells into one
 - moveCell { "cell_id": "id", "direction": "up"|"down" }
 - changeCellType { "cell_id": "id", "type": "code"|"markdown" }
 - copyCells { "cell_ids": ["id1", "id2"] }
@@ -2015,7 +2018,26 @@ To use tools, include JSON in your response:
 }
 \`\`\`
 
-Be helpful and concise. Explain before executing actions.`;
+IMPORTANT GUIDELINES:
+1. When splitting code into multiple cells, use the splitCell tool with COMPLETE code in each "parts" element.
+   Each part should be fully functional code - do NOT use ellipsis (...) or comments like "# rest of code".
+   Include the ENTIRE code for each cell, even if it seems repetitive.
+
+2. When creating multiple cells, use multiple createCell actions, one for each cell.
+
+3. For large code blocks, you can use multiple actions:
+   \`\`\`json
+   {
+     "message": "Creating 3 cells with your code",
+     "actions": [
+       { "tool": "createCell", "params": { "source": "# Cell 1: Imports\\nimport torch\\nimport numpy as np", "position": 0 } },
+       { "tool": "createCell", "params": { "source": "# Cell 2: Model definition\\nclass MyModel(nn.Module):\\n    def __init__(self):\\n        super().__init__()\\n        self.fc = nn.Linear(10, 5)", "position": 1 } },
+       { "tool": "createCell", "params": { "source": "# Cell 3: Training\\nmodel = MyModel()\\nprint(model)", "position": 2 } }
+     ]
+   }
+   \`\`\`
+
+Be helpful and provide complete, working code. Never truncate or abbreviate code.`;
 
 export default {
   parseAIResponse,

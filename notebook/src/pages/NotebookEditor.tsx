@@ -15,10 +15,13 @@ import { TableOfContents } from "@/components/notebook/TableOfContents";
 import { Cell, Notebook, CellOutput, CellTag, CellMetadata } from "@/types/notebook";
 import { CellMetadataDialog } from "@/components/notebook/CellMetadataDialog";
 import { useKernelExecution } from "@/hooks/useKernelExecution";
+import { useContainerExecution } from "@/hooks/useContainerExecution";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { notebookService } from "@/services/notebookService";
 import { executionService } from "@/services/executionService";
 import { exportToIpynb, exportToPython, exportToHtml } from "@/utils/notebookExport";
+
+type ExecutionMode = "kernel" | "container";
 
 // Mock notebook data (fallback)
 const mockNotebook: Notebook = {
@@ -147,6 +150,9 @@ export const NotebookEditorPage = () => {
   // Presentation Mode (outputs only)
   const [isPresentationMode, setIsPresentationMode] = useState(false);
 
+  // Execution Mode (kernel vs container)
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("kernel");
+
   // Checkpoints
   const [checkpoints, setCheckpoints] = useState<{ id: string; name: string; cells: Cell[]; timestamp: Date }[]>([]);
   const [showCheckpointsDialog, setShowCheckpointsDialog] = useState(false);
@@ -170,6 +176,13 @@ export const NotebookEditorPage = () => {
     onExecutionStart: handleExecutionStart,
     onExecutionComplete: handleExecutionComplete,
     onExecutionError: handleExecutionError,
+  });
+
+  // Container execution hook
+  const containerExecution = useContainerExecution({
+    notebookId: id || "default",
+    autoConnect: false,
+    preferGpu: true,
   });
 
   // Add log entry helper
@@ -698,6 +711,18 @@ export const NotebookEditorPage = () => {
     setIsPresentationMode(!isPresentationMode);
   }, [isPresentationMode]);
 
+  // 13. Toggle Execution Mode (kernel vs container)
+  const handleToggleExecutionMode = useCallback(() => {
+    const newMode = executionMode === "kernel" ? "container" : "kernel";
+    setExecutionMode(newMode);
+    addLog("info", `Switched to ${newMode} execution mode`);
+
+    // Auto-connect to container when switching to container mode
+    if (newMode === "container" && !containerExecution.isConnected) {
+      containerExecution.connect();
+    }
+  }, [executionMode, containerExecution, addLog]);
+
   // Keyboard shortcuts: Command Mode (Jupyter-like) + Ctrl shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -971,6 +996,98 @@ export const NotebookEditorPage = () => {
     const cell = cells.find((c) => c.id === cellId);
     if (!cell || cell.cellType !== "code") return;
 
+    // Container execution mode
+    if (executionMode === "container") {
+      const startTime = Date.now();
+      setCells(
+        cells.map((c) =>
+          c.id === cellId ? { ...c, isExecuting: true, outputs: [], executionStartTime: startTime } : c
+        )
+      );
+      addLog("info", "Executing in container...", cellId);
+
+      try {
+        const result = await containerExecution.execute(cell.source);
+        executionCountRef.current += 1;
+        const endTime = Date.now();
+
+        if (result) {
+          // Convert container outputs to notebook outputs
+          const outputs: CellOutput[] = result.outputs.map((out) => {
+            if (out.output_type === "error") {
+              return {
+                outputType: "error",
+                ename: out.ename || "Error",
+                evalue: out.evalue || "",
+                traceback: out.traceback || [],
+              };
+            }
+            return {
+              outputType: "stream",
+              text: out.text || "",
+            };
+          });
+
+          setCells((prevCells) =>
+            prevCells.map((c) =>
+              c.id === cellId
+                ? {
+                    ...c,
+                    isExecuting: false,
+                    outputs,
+                    executionCount: executionCountRef.current,
+                    executionDuration: endTime - startTime,
+                  }
+                : c
+            )
+          );
+          addLog(result.status === "error" ? "error" : "success", `Container execution ${result.status}`, cellId);
+        } else {
+          setCells((prevCells) =>
+            prevCells.map((c) =>
+              c.id === cellId
+                ? {
+                    ...c,
+                    isExecuting: false,
+                    outputs: [
+                      {
+                        outputType: "error",
+                        ename: "ExecutionError",
+                        evalue: "Container execution failed",
+                        traceback: [],
+                      },
+                    ],
+                  }
+                : c
+            )
+          );
+          addLog("error", "Container execution failed", cellId);
+        }
+      } catch (error) {
+        setCells((prevCells) =>
+          prevCells.map((c) =>
+            c.id === cellId
+              ? {
+                  ...c,
+                  isExecuting: false,
+                  outputs: [
+                    {
+                      outputType: "error",
+                      ename: "ContainerError",
+                      evalue: error instanceof Error ? error.message : String(error),
+                      traceback: [],
+                    },
+                  ],
+                }
+              : c
+          )
+        );
+        addLog("error", `Container error: ${error}`, cellId);
+      }
+      return;
+    }
+
+    // Kernel execution mode
     if (isConnected) {
       // Use real kernel execution
       try {
@@ -1275,6 +1392,21 @@ export const NotebookEditorPage = () => {
             onExportHtml={handleExportHtml}
             isSplitViewActive={showSplitView}
             showPackages={showPackageManager}
+            // Container execution props
+            executionMode={executionMode}
+            onToggleExecutionMode={handleToggleExecutionMode}
+            containerStatus={containerExecution.status}
+            containerImage={containerExecution.currentImage}
+            containerImages={containerExecution.availableImages}
+            containerHasGpu={containerExecution.hasGpu}
+            containerUseGpu={containerExecution.useGpu}
+            containerIsPulling={containerExecution.isPulling}
+            containerPullProgress={containerExecution.pullProgress}
+            containerId={containerExecution.containerId}
+            onConnectContainer={() => containerExecution.connect()}
+            onDisconnectContainer={(remove) => containerExecution.disconnect(remove)}
+            onSelectContainerImage={(imageId) => containerExecution.setImage(imageId)}
+            onToggleContainerGpu={() => containerExecution.toggleGpu()}
           />
         )}
 

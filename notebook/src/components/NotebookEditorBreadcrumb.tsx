@@ -16,6 +16,7 @@ import {
   Download,
   ChevronDown,
   List,
+  Box,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Breadcrumb } from "./Breadcrumb";
@@ -28,6 +29,10 @@ import {
 } from "./ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { KernelSelector } from "./notebook/KernelSelector";
+import { ContainerSelector, ContainerImage } from "./notebook/ContainerSelector";
+import { ContainerStatus } from "@/hooks/useContainerExecution";
+
+type ExecutionMode = "kernel" | "container";
 
 interface NotebookEditorBreadcrumbProps {
   notebookName: string;
@@ -56,6 +61,21 @@ interface NotebookEditorBreadcrumbProps {
   showSplitView?: boolean;
   showTableOfContents?: boolean;
   isSplitViewActive?: boolean;
+  // Container execution props
+  executionMode?: ExecutionMode;
+  onToggleExecutionMode?: () => void;
+  containerStatus?: ContainerStatus;
+  containerImage?: string;
+  containerImages?: ContainerImage[];
+  containerHasGpu?: boolean;
+  containerUseGpu?: boolean;
+  containerIsPulling?: boolean;
+  containerPullProgress?: string;
+  containerId?: string | null;
+  onConnectContainer?: () => void;
+  onDisconnectContainer?: (remove?: boolean) => void;
+  onSelectContainerImage?: (imageId: string) => void;
+  onToggleContainerGpu?: () => void;
 }
 
 export const NotebookEditorBreadcrumb = ({
@@ -85,6 +105,21 @@ export const NotebookEditorBreadcrumb = ({
   showSplitView = false,
   showTableOfContents = false,
   isSplitViewActive = false,
+  // Container props
+  executionMode = "kernel",
+  onToggleExecutionMode,
+  containerStatus = "disconnected",
+  containerImage = "python",
+  containerImages = [],
+  containerHasGpu = false,
+  containerUseGpu = false,
+  containerIsPulling = false,
+  containerPullProgress = "",
+  containerId = null,
+  onConnectContainer,
+  onDisconnectContainer,
+  onSelectContainerImage,
+  onToggleContainerGpu,
 }: NotebookEditorBreadcrumbProps) => {
   const breadcrumbItems = [
     { label: "Home", href: "/", icon: <Home className="h-4 w-4" /> },
@@ -93,17 +128,67 @@ export const NotebookEditorBreadcrumb = ({
   ];
 
   const actions = (
-    <div className="flex items-center gap-1">
-      {/* Kernel Selector */}
-      <KernelSelector
-        currentKernel={kernelName}
-        kernelStatus={kernelStatus}
-        onSelectKernel={onSelectKernel}
-        onRestart={onRestart}
-        onInterrupt={onStop}
-        onDisconnect={onDisconnectKernel}
-        compact
-      />
+    <div className="flex items-center gap-2">
+      {/* Execution Mode Toggle */}
+      {onToggleExecutionMode && (
+        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+          <button
+            onClick={() => executionMode !== "kernel" && onToggleExecutionMode()}
+            className={cn(
+              "flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors",
+              executionMode === "kernel"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Kernel
+          </button>
+          <button
+            onClick={() => executionMode !== "container" && onToggleExecutionMode()}
+            className={cn(
+              "flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors",
+              executionMode === "container"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Box className="h-3 w-3" />
+            Container
+          </button>
+        </div>
+      )}
+
+      {/* Kernel Selector - shown when in kernel mode */}
+      {executionMode === "kernel" && (
+        <KernelSelector
+          currentKernel={kernelName}
+          kernelStatus={kernelStatus}
+          onSelectKernel={onSelectKernel}
+          onRestart={onRestart}
+          onInterrupt={onStop}
+          onDisconnect={onDisconnectKernel}
+          compact
+        />
+      )}
+
+      {/* Container Selector - shown when in container mode */}
+      {executionMode === "container" && (
+        <ContainerSelector
+          status={containerStatus}
+          currentImage={containerImage}
+          availableImages={containerImages}
+          hasGpu={containerHasGpu}
+          useGpu={containerUseGpu}
+          isPulling={containerIsPulling}
+          pullProgress={containerPullProgress}
+          containerId={containerId}
+          onConnect={onConnectContainer}
+          onDisconnect={() => onDisconnectContainer?.()}
+          onSelectImage={onSelectContainerImage}
+          onToggleGpu={onToggleContainerGpu}
+          compact
+        />
+      )}
     </div>
   );
 

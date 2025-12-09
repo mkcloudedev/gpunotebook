@@ -202,6 +202,31 @@ class DockerService:
         success, stdout, stderr = await self._run_docker_command("pull", image_name)
         return success, stdout if success else stderr
 
+    async def pull_image_stream(self, image_name: str):
+        """Pull a Docker image with streaming progress."""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "docker", "pull", image_name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                yield {"type": "progress", "message": line.decode().strip()}
+
+            await process.wait()
+
+            if process.returncode == 0:
+                yield {"type": "complete", "success": True, "message": f"Successfully pulled {image_name}"}
+            else:
+                yield {"type": "error", "success": False, "message": f"Failed to pull {image_name}"}
+
+        except Exception as e:
+            yield {"type": "error", "success": False, "message": str(e)}
+
     async def remove_image(self, image_id: str, force: bool = False) -> tuple[bool, str]:
         """Remove a Docker image."""
         args = ["rmi"]

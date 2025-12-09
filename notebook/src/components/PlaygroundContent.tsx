@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Play, Square, Copy, Eraser, Terminal, Code2, ChevronDown, Loader2, Home, Sparkles, Trash2, Activity, Check, RotateCcw, Clock } from "lucide-react";
+import { Play, Square, Copy, Eraser, Terminal, Code2, ChevronDown, Loader2, Home, Sparkles, Trash2, Activity, Check, RotateCcw, Clock, MessageSquare } from "lucide-react";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Breadcrumb } from "./Breadcrumb";
@@ -11,6 +11,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { MonacoCodeEditor } from "./notebook/MonacoCodeEditor";
+import { FloatingAIChat } from "./FloatingAIChat";
 import { useKernelExecution } from "@/hooks/useKernelExecution";
 import { CellOutput } from "@/types/notebook";
 
@@ -64,6 +65,7 @@ export const PlaygroundContent = () => {
   const [executionDuration, setExecutionDuration] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
 
   // Real kernel execution hook
   const {
@@ -427,6 +429,36 @@ export const PlaygroundContent = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating AI Chat */}
+      <FloatingAIChat
+        isOpen={showAIChat}
+        onToggle={() => setShowAIChat(!showAIChat)}
+        title="Code Assistant"
+        welcomeMessage="Hello! I'm your coding assistant. I can help you write Python code, debug errors, explain concepts, and suggest optimizations. What would you like to work on?"
+        systemPrompt={`You are an expert Python coding assistant helping users in a code playground.
+
+Current code in editor:
+\`\`\`python
+${code}
+\`\`\`
+
+${outputs.length > 0 ? `Last output:\n${outputs.map(o => o.text || o.evalue || '').join('\n')}` : ''}
+
+Help users:
+1. Write and debug Python code
+2. Explain errors and suggest fixes
+3. Optimize code for performance
+4. Explain Python concepts
+5. Suggest best practices
+
+Always provide code examples when relevant. Format code blocks with \`\`\`python.`}
+        context={{
+          currentCode: code,
+          kernelStatus,
+          lastOutput: outputs.length > 0 ? outputs[outputs.length - 1] : null,
+        }}
+      />
     </main>
   );
 };

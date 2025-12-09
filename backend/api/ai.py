@@ -413,7 +413,16 @@ async def claude_code_chat_stream(request: ClaudeCodeRequest):
             if response.type == "assistant" and response.content:
                 yield f"data: {json.dumps({'type': 'content', 'content': response.content})}\n\n"
             elif response.type == "result":
-                yield f"data: {json.dumps({'type': 'result', 'session_id': response.session_id, 'total_cost_usd': response.total_cost_usd, 'duration_ms': response.duration_ms})}\n\n"
+                # Include the final result content if available
+                result_data = {
+                    'type': 'result',
+                    'session_id': response.session_id,
+                    'total_cost_usd': response.total_cost_usd,
+                    'duration_ms': response.duration_ms
+                }
+                if response.content:
+                    result_data['content'] = response.content
+                yield f"data: {json.dumps(result_data)}\n\n"
             elif response.type == "error":
                 yield f"data: {json.dumps({'type': 'error', 'content': response.content})}\n\n"
             elif response.type == "init":

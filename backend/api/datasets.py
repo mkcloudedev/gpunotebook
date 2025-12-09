@@ -15,6 +15,50 @@ from core.config import settings
 router = APIRouter()
 
 
+@router.get("")
+async def list_datasets():
+    """List all available datasets."""
+    try:
+        import os
+        from datetime import datetime
+
+        datasets = []
+        upload_dir = Path(settings.UPLOAD_DIR)
+
+        # Search for dataset files in upload directory
+        for ext in ['*.csv', '*.parquet', '*.xlsx', '*.xls', '*.json']:
+            for file_path in upload_dir.rglob(ext):
+                # Skip notebook files
+                if file_path.suffix == '.json':
+                    try:
+                        import json
+                        with open(file_path, 'r') as f:
+                            data = json.load(f)
+                        if isinstance(data, dict) and 'cells' in data:
+                            continue  # Skip notebook files
+                    except:
+                        pass
+
+                stat = file_path.stat()
+                rel_path = str(file_path.relative_to(upload_dir))
+
+                datasets.append({
+                    "name": file_path.name,
+                    "path": rel_path,
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "format": file_path.suffix.upper().strip('.'),
+                })
+
+        # Sort by modified date (newest first)
+        datasets.sort(key=lambda x: x['modified'], reverse=True)
+
+        return {"datasets": datasets, "total": len(datasets)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class CleanDataRequest(BaseModel):
     """Request model for data cleaning operation."""
     path: str

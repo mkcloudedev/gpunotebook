@@ -571,29 +571,150 @@ const HistoryChart = ({
         </div>
       </div>
 
-      {/* Bar Chart */}
-      <div className="flex items-end gap-0.5 px-3 py-2 h-80">
+      {/* Line Chart */}
+      <div className="relative px-3 py-2 h-80">
         {data.length === 0 ? (
           <div className="flex w-full h-full items-center justify-center text-muted-foreground text-xs">
             Collecting data...
           </div>
         ) : (
-          data.map((v, i) => {
-            const normalizedV = ((v - minValue) / (maxValue - minValue)) * 100;
-            const barColor = normalizedV >= dangerThreshold ? "#EF4444" :
-                            normalizedV >= warningThreshold ? "#F59E0B" : color;
-            return (
-              <div
-                key={i}
-                className="flex-1 rounded-t transition-all duration-200"
+          <svg className="w-full h-full" preserveAspectRatio="none">
+            {/* Grid lines */}
+            {[0, 25, 50, 75, 100].map((tick) => {
+              const y = 100 - tick;
+              return (
+                <g key={tick}>
+                  <line
+                    x1="0%"
+                    y1={`${y}%`}
+                    x2="100%"
+                    y2={`${y}%`}
+                    stroke="currentColor"
+                    strokeOpacity="0.1"
+                    strokeDasharray="4 4"
+                  />
+                  <text
+                    x="2"
+                    y={`${y}%`}
+                    dy="-4"
+                    className="fill-muted-foreground"
+                    style={{ fontSize: "9px" }}
+                  >
+                    {Math.round(minValue + (tick / 100) * (maxValue - minValue))}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Warning threshold line */}
+            <line
+              x1="0%"
+              y1={`${100 - warningThreshold}%`}
+              x2="100%"
+              y2={`${100 - warningThreshold}%`}
+              stroke="#F59E0B"
+              strokeOpacity="0.5"
+              strokeDasharray="6 3"
+              strokeWidth="1"
+            />
+
+            {/* Danger threshold line */}
+            <line
+              x1="0%"
+              y1={`${100 - dangerThreshold}%`}
+              x2="100%"
+              y2={`${100 - dangerThreshold}%`}
+              stroke="#EF4444"
+              strokeOpacity="0.5"
+              strokeDasharray="6 3"
+              strokeWidth="1"
+            />
+
+            {/* Area fill under line */}
+            <defs>
+              <linearGradient id={`gradient-${title.replace(/\s/g, '')}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity="0.4" />
+                <stop offset="100%" stopColor={color} stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
+
+            {data.length > 1 && (
+              <path
+                d={`
+                  M 0 100
+                  ${data.map((v, i) => {
+                    const x = (i / (data.length - 1)) * 100;
+                    const normalizedV = ((v - minValue) / (maxValue - minValue)) * 100;
+                    const y = 100 - Math.min(Math.max(normalizedV, 0), 100);
+                    return `L ${x} ${y}`;
+                  }).join(' ')}
+                  L 100 100 Z
+                `}
+                fill={`url(#gradient-${title.replace(/\s/g, '')})`}
+              />
+            )}
+
+            {/* Main line */}
+            {data.length > 1 && (
+              <polyline
+                points={data.map((v, i) => {
+                  const x = (i / (data.length - 1)) * 100;
+                  const normalizedV = ((v - minValue) / (maxValue - minValue)) * 100;
+                  const y = 100 - Math.min(Math.max(normalizedV, 0), 100);
+                  return `${x},${y}`;
+                }).join(' ')}
+                fill="none"
+                stroke={statusColor}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 style={{
-                  height: `${Math.max(normalizedV, 2)}%`,
-                  backgroundColor: barColor,
-                  opacity: 0.4 + (i / data.length) * 0.6,
+                  filter: `drop-shadow(0 0 4px ${statusColor})`,
                 }}
               />
-            );
-          })
+            )}
+
+            {/* Data points */}
+            {data.map((v, i) => {
+              const x = data.length > 1 ? (i / (data.length - 1)) * 100 : 50;
+              const normalizedV = ((v - minValue) / (maxValue - minValue)) * 100;
+              const y = 100 - Math.min(Math.max(normalizedV, 0), 100);
+              const pointColor = normalizedV >= dangerThreshold ? "#EF4444" :
+                                normalizedV >= warningThreshold ? "#F59E0B" : color;
+
+              // Only show every 5th point to avoid clutter
+              if (i % 5 !== 0 && i !== data.length - 1) return null;
+
+              return (
+                <circle
+                  key={i}
+                  cx={`${x}%`}
+                  cy={`${y}%`}
+                  r={i === data.length - 1 ? 4 : 2}
+                  fill={pointColor}
+                  stroke={i === data.length - 1 ? "white" : "none"}
+                  strokeWidth="1"
+                  style={{
+                    filter: i === data.length - 1 ? `drop-shadow(0 0 4px ${pointColor})` : 'none',
+                  }}
+                />
+              );
+            })}
+
+            {/* Current value indicator on the right */}
+            {data.length > 0 && (
+              <g>
+                <line
+                  x1="100%"
+                  y1={`${100 - percent}%`}
+                  x2="97%"
+                  y2={`${100 - percent}%`}
+                  stroke={statusColor}
+                  strokeWidth="2"
+                />
+              </g>
+            )}
+          </svg>
         )}
       </div>
 

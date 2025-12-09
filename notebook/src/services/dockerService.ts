@@ -286,6 +286,54 @@ class DockerService {
   }
 
   /**
+   * Pull an image with streaming progress.
+   */
+  async *pullImageStream(imageName: string): AsyncGenerator<{ type: string; message?: string; success?: boolean }> {
+    const response = await fetch(`/api/docker/images/pull/stream?image=${encodeURIComponent(imageName)}`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to pull image: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("No response body");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") {
+              return;
+            }
+            try {
+              yield JSON.parse(data);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
    * Remove an image.
    */
   async removeImage(

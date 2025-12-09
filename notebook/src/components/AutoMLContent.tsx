@@ -56,6 +56,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { AutoMLBreadcrumb } from "./AutoMLBreadcrumb";
+import { FloatingAIChat } from "./FloatingAIChat";
 import {
   Algorithm,
   AlgorithmCategory,
@@ -309,6 +310,9 @@ export const AutoMLContent = () => {
   // Dialogs
   const [showCreateExperimentDialog, setShowCreateExperimentDialog] = useState(false);
   const [showRecommendationDialog, setShowRecommendationDialog] = useState(false);
+
+  // AI Chat
+  const [showAIChat, setShowAIChat] = useState(false);
 
   // Polling ref
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -686,6 +690,50 @@ export const AutoMLContent = () => {
             setShowRecommendationDialog(false);
             setActiveTab("recommendations");
           }
+        }}
+      />
+
+      {/* Floating AI Chat */}
+      <FloatingAIChat
+        isOpen={showAIChat}
+        onToggle={() => setShowAIChat(!showAIChat)}
+        title="AutoML Assistant"
+        welcomeMessage="Hello! I'm your AutoML assistant. I can help you choose algorithms, understand experiment results, and optimize your machine learning pipelines. What would you like to know?"
+        systemPrompt={`You are an expert AutoML assistant helping users with machine learning tasks.
+
+Current context:
+- Available algorithms: ${algorithms.map(a => a.name).join(', ')}
+- Active experiments: ${experiments.length}
+- Running experiments: ${experiments.filter(e => e.status === 'running').length}
+- Completed experiments: ${experiments.filter(e => e.status === 'completed').length}
+${selectedAlgorithm ? `- Currently selected algorithm: ${selectedAlgorithm.name}` : ''}
+
+Help users:
+1. Choose the right algorithm for their task
+2. Understand hyperparameters and their effects
+3. Interpret experiment results and metrics
+4. Suggest improvements and optimizations
+5. Explain pros/cons of different approaches`}
+        context={{
+          algorithms: algorithms.map(a => ({
+            name: a.name,
+            category: a.category,
+            taskTypes: a.taskTypes,
+            gpuAccelerated: a.gpuAccelerated,
+          })),
+          experiments: experiments.map(e => ({
+            name: e.name,
+            status: e.status,
+            taskType: e.taskType,
+            models: e.models.length,
+            bestModel: e.bestModelId ? e.models.find(m => m.id === e.bestModelId)?.algorithmName : undefined,
+          })),
+          selectedAlgorithm: selectedAlgorithm ? {
+            name: selectedAlgorithm.name,
+            description: selectedAlgorithm.description,
+            pros: selectedAlgorithm.pros,
+            cons: selectedAlgorithm.cons,
+          } : null,
         }}
       />
     </div>

@@ -265,9 +265,11 @@ Be concise and helpful. Focus on practical solutions."""
             )
 
         elif msg_type == "result":
+            # Get the final result content
+            result_content = data.get("result")
             return ClaudeCodeResponse(
                 type="result",
-                content=data.get("result"),
+                content=result_content,
                 session_id=data.get("session_id"),
                 total_cost_usd=data.get("total_cost_usd"),
                 duration_ms=data.get("duration_ms"),
@@ -282,6 +284,19 @@ Be concise and helpful. Focus on practical solutions."""
                 is_error=True,
                 raw=data
             )
+
+        # Handle tool use messages (show progress)
+        elif msg_type == "user" and data.get("message", {}).get("content"):
+            content_blocks = data.get("message", {}).get("content", [])
+            for block in content_blocks:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tool_content = block.get("content", "")
+                    if tool_content:
+                        return ClaudeCodeResponse(
+                            type="assistant",
+                            content=f"\n{tool_content}\n",
+                            raw=data
+                        )
 
         return None
 

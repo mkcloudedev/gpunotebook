@@ -36,6 +36,7 @@ import {
   AIToolsCallbacks,
   ActionResult,
 } from "@/services/aiToolsHandler";
+import { settingsService } from "@/services/settingsService";
 
 const WELCOME_MESSAGE = `Hello! I can help you with your notebook. I can:
 
@@ -233,13 +234,16 @@ export const AIChatPanel = ({
           }
         }
       } else {
-        // Call regular AI API
+        // Call regular AI API - use settings for maxTokens
+        const settings = settingsService.get();
+        const maxTokens = settings.claudeCode?.maxOutputTokens || 16384;
+
         const response = await aiService.chat({
           provider: selectedProvider,
           messages: apiMessages,
           systemPrompt: NOTEBOOK_SYSTEM_PROMPT,
           notebookContext,
-          maxTokens: 4096,
+          maxTokens,
           temperature: 0.7,
         });
         responseContent = response.message;

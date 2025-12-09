@@ -1,8 +1,10 @@
 """
 Docker management API endpoints.
 """
+import json
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from models.docker import (
     ContainerSummary,
@@ -217,6 +219,23 @@ async def pull_image(image: str = Query(..., description="Image name with option
         raise HTTPException(status_code=400, detail=message)
 
     return {"success": True, "message": message}
+
+
+@router.post("/images/pull/stream")
+async def pull_image_stream(image: str = Query(..., description="Image name with optional tag")):
+    """Pull a Docker image with streaming progress."""
+    if not await docker_service.is_available():
+        raise HTTPException(status_code=503, detail="Docker is not available")
+
+    async def generate():
+        async for progress in docker_service.pull_image_stream(image):
+            yield f"data: {json.dumps(progress)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
+    )
 
 
 @router.delete("/images/{image_id}", response_model=OperationResponse)
